@@ -141,7 +141,7 @@ class ProjectCard(QFrame):
         self._status = status  # type: ignore[assignment]
         self._percent, self._eta = percent, eta_text
         self._name.set_name(name)
-        self._meta.setText(f"{kind_text} · {date_text}")
+        self._meta.setText(" · ".join(t for t in (kind_text, date_text) if t))
         self._badge.setVisible(status != "files")  # nothing to report before analysis
         if status != "files":
             self._badge.set_status(self._status, percent)

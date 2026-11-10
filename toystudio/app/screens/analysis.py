@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -129,23 +130,34 @@ class AnalysisScreen(QWidget):
         self.done_label.setProperty("tone", "done")
         left.addWidget(self.saved_label)
         left.addWidget(self.done_label)
-        draft_row = QHBoxLayout()  # drafts to finish in Premiere, by format
+        # drafts to finish in Premiere, by format: a quiet panel under «Анализ завершён»
+        self._draft_box = QFrame()
+        self._draft_box.setObjectName("DraftPanel")
+        panel = QVBoxLayout(self._draft_box)
+        panel.setContentsMargins(20, 16, 20, 16)
+        panel.setSpacing(10)
+        self._draft_title = QLabel()
+        self._draft_title.setProperty("role", "heading")
+        panel.addWidget(self._draft_title)
+        draft_row = QHBoxLayout()
+        draft_row.setSpacing(8)
         self.draft_buttons: dict[DraftKind, QPushButton] = {}
         kinds: tuple[DraftKind, ...] = ("film", "restaurant", "express", "sde")
         for kind in kinds:
             b = QPushButton()
-            set_variant(b, "variant", "primary")
             b.clicked.connect(lambda _=False, k=kind: self._build(k))
             self.draft_buttons[kind] = b
             draft_row.addWidget(b)
+        draft_row.addStretch(1)
+        self.open_folder_button = QPushButton()
+        set_variant(self.open_folder_button, "variant", "ghost")
+        draft_row.addWidget(self.open_folder_button)
+        panel.addLayout(draft_row)
         self.draft_label = QLabel()
         self.draft_label.setProperty("role", "body")
         self.draft_label.setWordWrap(True)
-        self.open_folder_button = QPushButton()
-        draft_row.addWidget(self.draft_label, 1)
-        draft_row.addWidget(self.open_folder_button)
-        self._draft_box = QWidget()
-        self._draft_box.setLayout(draft_row)
+        panel.addWidget(self.draft_label)
+        left.addSpacing(8)
         left.addWidget(self._draft_box)
         left.addStretch(1)
         columns.addLayout(left, 60)
@@ -236,7 +248,10 @@ class AnalysisScreen(QWidget):
         self._draft_box.setVisible(vm.can_draft)
         for kind, b in self.draft_buttons.items():
             b.setVisible(kind in vm.draft_kinds)
+            first = bool(vm.draft_kinds) and kind == vm.draft_kinds[0]
+            set_variant(b, "variant", "primary" if first else "")
         self.draft_label.setText(self.draft_text())
+        self.draft_label.setVisible(bool(self.draft_label.text()))
         set_variant(self.draft_label, "tone", "error" if vm.draft_error else "done")
         self.open_folder_button.setVisible(vm.draft is not None)
         self._offline_note.setVisible(running)
@@ -280,6 +295,7 @@ class AnalysisScreen(QWidget):
         self._feed_shown, self._epoch_shown = vm.feed_version, vm.feed_epoch
         for card in self._cards:
             self._feed_box.removeWidget(card)
+            card.hide()  # out of the layout it would linger at the top-left until deleted
             card.deleteLater()
         self._cards, self._card_ids = [], []
         shown = vm.feed[:FEED_LIMIT]
@@ -317,6 +333,7 @@ class AnalysisScreen(QWidget):
             card = self._cards.pop()
             self._pixmaps.pop(self._card_ids.pop(), None)
             self._feed_box.removeWidget(card)
+            card.hide()
             card.deleteLater()
         self._update_more()
 
@@ -437,6 +454,10 @@ class AnalysisScreen(QWidget):
             b.setMinimumWidth(b.fontMetrics().horizontalAdvance(text) + 56)
         self.open_folder_button.setText(
             QCoreApplication.translate("AnalysisScreen", "Открыть папку")
+        )
+        self.open_folder_button.setIcon(icon("folder", token("ink-muted"), 16))
+        self._draft_title.setText(
+            QCoreApplication.translate("AnalysisScreen", "Черновики для Premiere")
         )
         self.draft_label.setText(self.draft_text())
         self._offline_note.setText(

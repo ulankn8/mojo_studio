@@ -191,6 +191,12 @@
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Камералардын сааттары салыштырылган жок — кара көчүрмө түзүү үчүн аларды салыштырыңыз.</translation>
     </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Черновики для Premiere</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Premiere үчүн кара көчүрмөлөр</translation>
+    </message>
 </context>
 <context>
     <name>AnalysisStage</name>

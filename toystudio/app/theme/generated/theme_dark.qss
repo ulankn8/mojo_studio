@@ -16,6 +16,31 @@ QFrame#Panel {
     background: #16181b;
 }
 
+/* Dialogs and scroll areas take the theme, never the platform's white base. */
+QDialog {
+    background: #16181b;
+}
+QAbstractScrollArea,
+QAbstractScrollArea > QWidget#qt_scrollarea_viewport,
+QScrollArea > QWidget#qt_scrollarea_viewport > QWidget {
+    background: transparent;
+    border: none;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: #32373d;
+    border-radius: 3px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover { background: #6b717b; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
 QFrame#Card {
     background: #1e2125;
     border: 1px solid #2a2e34;
@@ -122,7 +147,7 @@ QLabel[badge="offline"] {
     color: #a3a9b3;
 }
 
-QLineEdit, QPlainTextEdit {
+QLineEdit, QPlainTextEdit, QDateEdit, QComboBox {
     background: #1e2125;
     color: #eceef1;
     border: 1px solid #6b717b;
@@ -132,8 +157,54 @@ QLineEdit, QPlainTextEdit {
     selection-color: #ffffff;
 }
 
-QLineEdit:focus, QPlainTextEdit:focus {
+QLineEdit:focus, QPlainTextEdit:focus, QDateEdit:focus, QComboBox:focus {
     border: 2px solid #5fb8e6;
+}
+QDateEdit::drop-down, QComboBox::drop-down {
+    border: none;
+    width: 28px;
+}
+QComboBox QAbstractItemView, QCalendarWidget QWidget {
+    background: #1e2125;
+    color: #eceef1;
+    selection-background-color: #b3303f;
+    selection-color: #ffffff;
+}
+
+QCheckBox {
+    spacing: 8px;
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #6b717b;
+    border-radius: 4px;
+    background: #1e2125;
+}
+QCheckBox::indicator:checked {
+    background: #b3303f;
+    border: 1px solid #b3303f;
+}
+QCheckBox::indicator:focus { border: 2px solid #5fb8e6; }
+
+/* Thumbnail grids (camera clock matching). */
+QListWidget {
+    background: #1e2125;
+    border: 1px solid #2a2e34;
+    border-radius: 10px;
+    padding: 8px;
+    color: #a3a9b3;
+}
+QListWidget::item {
+    border: 2px solid transparent;
+    border-radius: 6px;
+    padding: 4px;
+}
+QListWidget::item:hover { background: #272b30; }
+QListWidget::item:selected {
+    background: #3a1a20;
+    border: 2px solid #b3303f;
+    color: #eceef1;
 }
 
 /* Typography roles and tones for labels. */
@@ -206,7 +277,18 @@ QFrame#ProjectCard, QFrame#FormatCard {
     border: 1px solid #2a2e34;
     border-radius: 10px;
 }
-QFrame#ProjectCard:hover, QFrame#FormatCard:hover { border: 1px solid #6b717b; }
+QFrame#ProjectCard:hover { border: 1px solid #6b717b; }
+QFrame#FormatCard:hover { border: 1px solid #b3303f; }
+QFrame#DraftPanel {
+    background: #16181b;
+    border: 1px solid #2a2e34;
+    border-radius: 10px;
+}
+QLabel#Logo {
+    font-size: 15px;
+    font-weight: 700;
+    color: #eceef1;
+}
 QFrame#ProjectCard:focus { border: 2px solid #5fb8e6; }
 QLabel#ProjectPreview {
     background: #000000;

@@ -16,6 +16,31 @@ QFrame#Panel {
     background: {{bg-100}};
 }
 
+/* Dialogs and scroll areas take the theme, never the platform's white base. */
+QDialog {
+    background: {{bg-100}};
+}
+QAbstractScrollArea,
+QAbstractScrollArea > QWidget#qt_scrollarea_viewport,
+QScrollArea > QWidget#qt_scrollarea_viewport > QWidget {
+    background: transparent;
+    border: none;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+    margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: {{bg-400}};
+    border-radius: 3px;
+    min-height: 32px;
+}
+QScrollBar::handle:vertical:hover { background: {{line-200}}; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
 QFrame#Card {
     background: {{bg-200}};
     border: 1px solid {{line-100}};
@@ -122,7 +147,7 @@ QLabel[badge="offline"] {
     color: {{status-offline}};
 }
 
-QLineEdit, QPlainTextEdit {
+QLineEdit, QPlainTextEdit, QDateEdit, QComboBox {
     background: {{bg-200}};
     color: {{ink}};
     border: 1px solid {{line-200}};
@@ -132,8 +157,54 @@ QLineEdit, QPlainTextEdit {
     selection-color: {{ink-on-accent}};
 }
 
-QLineEdit:focus, QPlainTextEdit:focus {
+QLineEdit:focus, QPlainTextEdit:focus, QDateEdit:focus, QComboBox:focus {
     border: 2px solid {{focus}};
+}
+QDateEdit::drop-down, QComboBox::drop-down {
+    border: none;
+    width: 28px;
+}
+QComboBox QAbstractItemView, QCalendarWidget QWidget {
+    background: {{bg-200}};
+    color: {{ink}};
+    selection-background-color: {{garnet-500}};
+    selection-color: {{ink-on-accent}};
+}
+
+QCheckBox {
+    spacing: {{space-2}};
+}
+QCheckBox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 1px solid {{line-200}};
+    border-radius: 4px;
+    background: {{bg-200}};
+}
+QCheckBox::indicator:checked {
+    background: {{garnet-500}};
+    border: 1px solid {{garnet-500}};
+}
+QCheckBox::indicator:focus { border: 2px solid {{focus}}; }
+
+/* Thumbnail grids (camera clock matching). */
+QListWidget {
+    background: {{bg-200}};
+    border: 1px solid {{line-100}};
+    border-radius: {{radius-lg}};
+    padding: {{space-2}};
+    color: {{ink-muted}};
+}
+QListWidget::item {
+    border: 2px solid transparent;
+    border-radius: {{radius-md}};
+    padding: {{space-1}};
+}
+QListWidget::item:hover { background: {{bg-300}}; }
+QListWidget::item:selected {
+    background: {{garnet-tint}};
+    border: 2px solid {{garnet-500}};
+    color: {{ink}};
 }
 
 /* Typography roles and tones for labels. */
@@ -206,7 +277,18 @@ QFrame#ProjectCard, QFrame#FormatCard {
     border: 1px solid {{line-100}};
     border-radius: {{radius-lg}};
 }
-QFrame#ProjectCard:hover, QFrame#FormatCard:hover { border: 1px solid {{line-200}}; }
+QFrame#ProjectCard:hover { border: 1px solid {{line-200}}; }
+QFrame#FormatCard:hover { border: 1px solid {{garnet-500}}; }
+QFrame#DraftPanel {
+    background: {{bg-100}};
+    border: 1px solid {{line-100}};
+    border-radius: {{radius-lg}};
+}
+QLabel#Logo {
+    font-size: {{heading-px}};
+    font-weight: 700;
+    color: {{ink}};
+}
 QFrame#ProjectCard:focus { border: 2px solid {{focus}}; }
 QLabel#ProjectPreview {
     background: {{player-bg}};

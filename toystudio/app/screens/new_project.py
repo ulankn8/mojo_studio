@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from toystudio.app.screens.projects import _KIND_TEXT
+from toystudio.app.screens.projects import _FORMAT_TEXT, _KIND_TEXT
 from toystudio.app.theme.apply import set_variant
 from toystudio.app.viewmodels.new_project_vm import DiskCheck, NewProjectVM
 from toystudio.app.widgets.banner import Banner
@@ -60,16 +60,6 @@ _WEDDING_TRACK: dict[MediaRole, str] = {
     MediaRole.MAIN: QT_TRANSLATE_NOOP("NewProjectScreen", "Ресторан: основная камера"),
     MediaRole.CUTAWAY: QT_TRANSLATE_NOOP("NewProjectScreen", "Ресторан: подсъёмка"),
     MediaRole.SPEECH: QT_TRANSLATE_NOOP("NewProjectScreen", "Ресторан: речь, звук с пульта"),
-}
-_FORMAT_TEXT: dict[ProjectFormat, str] = {
-    ProjectFormat.WEDDING_EXPRESS: QT_TRANSLATE_NOOP(
-        "NewProjectScreen", "Свадьба · экспресс-видео"
-    ),
-    ProjectFormat.WEDDING_FULL: QT_TRANSLATE_NOOP("NewProjectScreen", "Свадьба · полный фильм"),
-    ProjectFormat.LOVE_STORY: QT_TRANSLATE_NOOP("NewProjectScreen", "Love Story"),
-    ProjectFormat.PODCAST: QT_TRANSLATE_NOOP("NewProjectScreen", "Подкаст или интервью"),
-    ProjectFormat.AD: QT_TRANSLATE_NOOP("NewProjectScreen", "Рекламный ролик"),
-    ProjectFormat.TOI: QT_TRANSLATE_NOOP("NewProjectScreen", "Той, юбилей и другое"),
 }
 
 
@@ -153,7 +143,8 @@ class NewProjectScreen(QWidget):
         self.info_banner.hide()
         right.addWidget(self.error_banner)
         right.addWidget(self.info_banner)
-        self.zones: dict[MediaRole, DropZone] = {r: DropZone(r) for r in vm.roles}
+        toi = vm.format is ProjectFormat.TOI  # the layout before formats: two tall zones
+        self.zones: dict[MediaRole, DropZone] = {r: DropZone(r, compact=not toi) for r in vm.roles}
         self._track_labels: dict[MediaRole, QLabel] = {}
         if vm.format is ProjectFormat.TOI:  # the layout before formats: video 6, music 4
             for role, stretch in zip(vm.roles, (6, 4), strict=True):

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
 
-from toystudio.core.models import ToiKind
+from toystudio.core.models import ProjectFormat, ToiKind
 from toystudio.storage.app_store import AppStore
 from toystudio.storage.project_store import ProjectStore
 
@@ -29,6 +29,7 @@ class ProjectItem:
     duration_us: int
     preview_path: Path | None
     has_copies: bool = False
+    format: ProjectFormat = ProjectFormat.TOI
 
 
 _DB_FILES = ("project.db-wal", "project.db-shm", "project.db.bak", "project.db")
@@ -87,6 +88,7 @@ class ProjectsVM(QObject):
                     duration_us=s.duration_us,
                     preview_path=thumb if thumb.is_file() else None,
                     has_copies=s.has_copies,
+                    format=s.format,
                 )
             )
         self._all = out

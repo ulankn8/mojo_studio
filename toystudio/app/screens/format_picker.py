@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Signal
+from collections.abc import Callable
+
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Qt, Signal
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -14,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from toystudio.app.theme.apply import set_variant
+from toystudio.app.widgets.icons import IconLabel
 from toystudio.core.models import ProjectFormat
 
 _T = "FormatPicker"
@@ -51,7 +55,25 @@ _CARDS: tuple[tuple[str, str, tuple[tuple[ProjectFormat, str], ...]], ...] = (
         ((ProjectFormat.TOI, QT_TRANSLATE_NOOP("FormatPicker", "Выбрать")),),
     ),
 )
-_COLUMNS = 3
+_ICONS = ("gem", "heart", "mic", "megaphone", "party")
+# (row, column, column span): the wedding, the studio's main work, leads on a double card
+_PLACES = ((0, 0, 2), (0, 2, 1), (1, 0, 1), (1, 1, 1), (1, 2, 1))
+
+
+class _Card(QFrame):
+    """A format card; a card with one choice is clickable as a whole."""
+
+    def __init__(self, on_click: Callable[[], None] | None) -> None:
+        super().__init__()
+        self.setObjectName("FormatCard")
+        self._on_click = on_click
+        if on_click is not None:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mouseReleaseEvent(self, e: QMouseEvent) -> None:
+        if self._on_click is not None and e.button() == Qt.MouseButton.LeftButton:
+            self._on_click()
+        super().mouseReleaseEvent(e)
 
 
 class FormatPickerScreen(QWidget):
@@ -60,8 +82,8 @@ class FormatPickerScreen(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 24, 32, 24)
-        root.setSpacing(16)
+        root.setContentsMargins(32, 28, 32, 24)
+        root.setSpacing(20)
         self._title = QLabel()
         self._title.setProperty("role", "title")
         root.addWidget(self._title)
@@ -69,34 +91,46 @@ class FormatPickerScreen(QWidget):
         grid.setSpacing(16)
         self._texts: list[tuple[QLabel, QLabel, list[QPushButton]]] = []
         self.buttons: dict[ProjectFormat, QPushButton] = {}
-        for i, (_title, _desc, choices) in enumerate(_CARDS):
-            card = QFrame()
-            card.setObjectName("FormatCard")
+        for (_title, _desc, choices), name, (row, col, span) in zip(
+            _CARDS, _ICONS, _PLACES, strict=True
+        ):
+            single = choices[0][0] if len(choices) == 1 else None
+            card = _Card(None if single is None else lambda f=single: self.chosen.emit(f))
             lay = QVBoxLayout(card)
-            lay.setContentsMargins(20, 20, 20, 20)
-            lay.setSpacing(8)
+            lay.setContentsMargins(24, 22, 24, 22)
+            lay.setSpacing(6)
+            mark = IconLabel(28)
+            mark.set_icon(name, "garnet-text")
             title = QLabel()
             title.setProperty("role", "heading")
             desc = QLabel()
             desc.setWordWrap(True)
             desc.setProperty("role", "caption")
             desc.setProperty("tone", "muted")
+            lay.addWidget(mark)
+            lay.addSpacing(6)
             lay.addWidget(title)
             lay.addWidget(desc, 1)
-            row = QHBoxLayout()
-            row.setSpacing(8)
+            lay.addSpacing(10)
+            buttons_row = QHBoxLayout()
+            buttons_row.setSpacing(8)
             buttons = []
-            for fmt, _label in choices:
+            for k, (fmt, _label) in enumerate(choices):
                 b = QPushButton()
                 b.setMinimumHeight(36)
-                set_variant(b, "variant", "primary")
+                if len(choices) > 1 and k == len(choices) - 1:  # the full film: the main choice
+                    set_variant(b, "variant", "primary")
                 b.clicked.connect(lambda _=False, f=fmt: self.chosen.emit(f))
-                row.addWidget(b)
+                buttons_row.addWidget(b)
                 buttons.append(b)
                 self.buttons[fmt] = b
-            lay.addLayout(row)
-            grid.addWidget(card, i // _COLUMNS, i % _COLUMNS)
+            if len(choices) == 1:
+                buttons_row.addStretch(1)
+            lay.addLayout(buttons_row)
+            grid.addWidget(card, row, col, 1, span)
             self._texts.append((title, desc, buttons))
+        for col in range(3):
+            grid.setColumnStretch(col, 1)
         root.addLayout(grid)
         root.addStretch(1)
         self.retranslate()

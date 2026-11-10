@@ -29,6 +29,7 @@ class EmptyState(QWidget):
         self._title = QLabel(title)
         self._title.setProperty("role", "display")
         self._title.setWordWrap(True)
+        self._title.setMinimumWidth(560)  # the headline stays on one line in Russian and Kyrgyz
         self._body = QLabel(body)
         self._body.setProperty("role", "body")
         self._body.setProperty("tone", "muted")

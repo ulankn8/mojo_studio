@@ -27,7 +27,7 @@ from toystudio.app.viewmodels.projects_vm import ProjectItem, ProjectsVM
 from toystudio.app.widgets.drop_zone import VIDEO_EXT
 from toystudio.app.widgets.empty_state import EmptyState
 from toystudio.core.format import format_eta
-from toystudio.core.models import ToiKind
+from toystudio.core.models import ProjectFormat, ToiKind
 
 _KIND_TEXT: dict[ToiKind, str] = {
     ToiKind.WEDDING: QT_TRANSLATE_NOOP("ToiKind", "Свадьба"),
@@ -37,6 +37,17 @@ _KIND_TEXT: dict[ToiKind, str] = {
     ToiKind.SUNNOT: QT_TRANSLATE_NOOP("ToiKind", "Сүннөт той"),
     ToiKind.KYZ_UZATUU: QT_TRANSLATE_NOOP("ToiKind", "Кыз узатуу"),
     ToiKind.OTHER: QT_TRANSLATE_NOOP("ToiKind", "Другое"),
+}
+# format labels share the «NewProjectScreen» context of their translations
+_FORMAT_TEXT: dict[ProjectFormat, str] = {
+    ProjectFormat.WEDDING_EXPRESS: QT_TRANSLATE_NOOP(
+        "NewProjectScreen", "Свадьба · экспресс-видео"
+    ),
+    ProjectFormat.WEDDING_FULL: QT_TRANSLATE_NOOP("NewProjectScreen", "Свадьба · полный фильм"),
+    ProjectFormat.LOVE_STORY: QT_TRANSLATE_NOOP("NewProjectScreen", "Love Story"),
+    ProjectFormat.PODCAST: QT_TRANSLATE_NOOP("NewProjectScreen", "Подкаст или интервью"),
+    ProjectFormat.AD: QT_TRANSLATE_NOOP("NewProjectScreen", "Рекламный ролик"),
+    ProjectFormat.TOI: QT_TRANSLATE_NOOP("NewProjectScreen", "Той, юбилей и другое"),
 }
 _FILTERS: tuple[tuple[str | None, str], ...] = (
     (None, QT_TRANSLATE_NOOP("ProjectsScreen", "Все проекты")),
@@ -161,7 +172,9 @@ class ProjectsScreen(QWidget):
         eta = None if item.eta_s is None else format_eta(item.eta_s, lang)
         card.set_data(
             item.name,
-            self._kind_text(item.kind),
+            self._kind_text(item.kind)
+            if item.format is ProjectFormat.TOI
+            else QCoreApplication.translate("NewProjectScreen", _FORMAT_TEXT[item.format]),
             item.event_date.strftime("%d.%m.%Y") if item.event_date else "",
             item.duration_us or None,
             item.status,

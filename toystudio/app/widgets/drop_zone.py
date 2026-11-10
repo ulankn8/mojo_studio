@@ -91,7 +91,9 @@ class DropZone(QFrame):
     files_dropped = Signal(list)
     replace_requested = Signal(str)
 
-    def __init__(self, role: MediaRole | MediaKind, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, role: MediaRole | MediaKind, parent: QWidget | None = None, *, compact: bool = False
+    ) -> None:
         super().__init__(parent)
         self.role = role if isinstance(role, MediaRole) else MediaRole.default_for(role)
         self._kind = self.role.kind
@@ -99,7 +101,8 @@ class DropZone(QFrame):
         self.setObjectName("DropZone")
         self.setAcceptDrops(True)
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 16, 16, 16)
+        # compact: one row (icon, prompt, buttons) for a screen with several tracks
+        root.setContentsMargins(*((16, 10, 12, 10) if compact else (16, 16, 16, 16)))
         root.setSpacing(8)
         # empty view
         self._empty = QWidget()
@@ -117,10 +120,17 @@ class DropZone(QFrame):
         buttons = QHBoxLayout()
         buttons.addWidget(self.choose_button)
         buttons.addWidget(self.folder_button)
-        for w in (self._icon, self._prompt):
-            elay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
-        elay.addLayout(buttons)
-        buttons.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        if compact:
+            elay.setDirection(QVBoxLayout.Direction.LeftToRight)
+            elay.setContentsMargins(0, 0, 0, 0)
+            elay.addWidget(self._icon)
+            elay.addWidget(self._prompt, 1)
+            elay.addLayout(buttons)
+        else:
+            for w in (self._icon, self._prompt):
+                elay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
+            elay.addLayout(buttons)
+            buttons.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         root.addWidget(self._empty)
         # list view
         self._list = QWidget()

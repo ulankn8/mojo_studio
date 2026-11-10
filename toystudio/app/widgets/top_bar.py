@@ -5,8 +5,9 @@ from __future__ import annotations
 from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QPushButton, QWidget
 
-from toystudio.app.theme.apply import set_variant
+from toystudio.app.theme.apply import set_variant, token
 from toystudio.app.widgets.elided import ElidedButton
+from toystudio.app.widgets.icons import app_icon, icon
 
 _STEPS = (
     QT_TRANSLATE_NOOP("Shell", "Файлы"),
@@ -33,7 +34,12 @@ class TopBar(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(16, 0, 16, 0)
         lay.setSpacing(8)
+        mark = QLabel()
+        mark.setPixmap(app_icon(64).pixmap(22, 22))
         self._logo = QLabel("T-Studio")
+        self._logo.setObjectName("Logo")
+        lay.addWidget(mark)
+        lay.addSpacing(2)
         lay.addWidget(self._logo)
         lay.addSpacing(16)
         self._projects_btn = QPushButton(QCoreApplication.translate("Shell", "Проекты"))
@@ -71,10 +77,17 @@ class TopBar(QWidget):
         set_variant(self._theme_btn, "variant", "ghost")
         self._theme_btn.clicked.connect(self._toggle_theme)
         lay.addWidget(self._theme_btn)
+        self._theme_icon()
 
     def _toggle_theme(self) -> None:
         self._theme = "light" if self._theme == "dark" else "dark"
         self.theme_changed.emit(self._theme)
+        self._theme_icon()
+
+    def _theme_icon(self) -> None:
+        """The icon shows the theme a click switches to."""
+        self._theme_btn.setIcon(icon("sun" if self._theme == "dark" else "moon",
+                                     token("ink-muted"), 16))  # fmt: skip
 
     def set_step(self, i: int, reachable: int) -> None:
         self._current = i
