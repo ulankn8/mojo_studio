@@ -14,13 +14,14 @@ def card_thumbnail(proxy: Path, out: Path) -> Path:
     return frame_at(proxy, probe_media(proxy).duration_us // 2, out)
 
 
-def frame_at(proxy: Path, at_us: int, out: Path) -> Path:
-    """JPEG of the frame of `proxy` at `at_us`, written via ``*.part`` -> ``os.replace``."""
+def frame_at(proxy: Path, at_us: int, out: Path, width: int | None = None) -> Path:
+    """JPEG of the frame of `proxy` at `at_us` (scaled to `width`), via ``*.part`` -> replace."""
     at_s = max(at_us, 0) / US_PER_S
     out.parent.mkdir(parents=True, exist_ok=True)
     part = out.with_name(out.name + ".part")
     cmd = [find_tool("ffmpeg"), "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
            "-ss", f"{at_s:.3f}", "-i", str(proxy), "-frames:v", "1",
+           *(["-vf", f"scale={width}:-2"] if width else []),
            "-q:v", "3", "-f", "image2", "-c:v", "mjpeg", str(part)]  # fmt: skip
     try:
         proc = subprocess.run(

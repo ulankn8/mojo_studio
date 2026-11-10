@@ -197,6 +197,54 @@
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Premiere үчүн кара көчүрмөлөр</translation>
     </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Love Story с ИИ</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Love Story ЖИ менен</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Нужен ключ API Anthropic: создайте его на console.anthropic.com, выполните в PowerShell setx ANTHROPIC_API_KEY "ваш-ключ" и перезапустите программу.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Anthropic API ачкычы керек: аны console.anthropic.com сайтында түзүп, PowerShellде setx ANTHROPIC_API_KEY "сиздин-ачкыч" аткарыңыз жана программаны кайра ачыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Ключ API не подошёл — проверьте его на console.anthropic.com.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">API ачкычы туура келген жок — аны console.anthropic.com сайтында текшериңиз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Нет связи с Claude — проверьте интернет и попробуйте ещё раз.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Claude менен байланыш жок — интернетти текшерип, кайра аракет кылыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>ИИ не взялся за этот клип — соберите его по правилам.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ бул клипти алган жок — аны эрежелер боюнча түзүңүз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>ИИ не вернул план — попробуйте ещё раз.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ план кайтарган жок — кайра аракет кылыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>ИИ смотрит кадры и выстраивает историю — около минуты…</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ кадрларды карап, окуяны түзүүдө — болжол менен бир мүнөт…</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Love Story: %1, склеек %2 · ИИ: «%3» · ≈ $%4</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Love Story: %1, кесилиштер %2 · ЖИ: «%3» · ≈ $%4</translation>
+    </message>
 </context>
 <context>
     <name>AnalysisStage</name>

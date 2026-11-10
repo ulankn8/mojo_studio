@@ -42,6 +42,7 @@ _DRAFT_LABELS = {
     "premiere": QT_TRANSLATE_NOOP("AnalysisScreen", "Собрать черновик для Premiere"),
     "express": QT_TRANSLATE_NOOP("AnalysisScreen", "Собрать экспресс-видео"),
     "sde": QT_TRANSLATE_NOOP("AnalysisScreen", "Собрать клип Love Story"),
+    "sde_ai": QT_TRANSLATE_NOOP("AnalysisScreen", "Love Story с ИИ"),
 }
 _DRAFT_ERRORS = {
     "no_synced_cameras": QT_TRANSLATE_NOOP(
@@ -53,6 +54,21 @@ _DRAFT_ERRORS = {
     "clocks": QT_TRANSLATE_NOOP(
         "AnalysisScreen", "Часы камер не сверены — сверьте их, чтобы собрать черновик."
     ),
+    "ai_no_key": QT_TRANSLATE_NOOP(
+        "AnalysisScreen",
+        "Нужен ключ API Anthropic: создайте его на console.anthropic.com, выполните в PowerShell "
+        'setx ANTHROPIC_API_KEY "ваш-ключ" и перезапустите программу.',
+    ),
+    "ai_bad_key": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Ключ API не подошёл — проверьте его на console.anthropic.com."
+    ),
+    "ai_network": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Нет связи с Claude — проверьте интернет и попробуйте ещё раз."
+    ),
+    "ai_refusal": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "ИИ не взялся за этот клип — соберите его по правилам."
+    ),
+    "ai_empty": QT_TRANSLATE_NOOP("AnalysisScreen", "ИИ не вернул план — попробуйте ещё раз."),
     "error": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось собрать черновик."),
 }
 FEED_LIMIT = 50  # cards shown; the rest is a single «и ещё N» line
@@ -142,7 +158,7 @@ class AnalysisScreen(QWidget):
         draft_row = QHBoxLayout()
         draft_row.setSpacing(8)
         self.draft_buttons: dict[DraftKind, QPushButton] = {}
-        kinds: tuple[DraftKind, ...] = ("film", "restaurant", "express", "sde")
+        kinds: tuple[DraftKind, ...] = ("film", "restaurant", "express", "sde_ai", "sde")
         for kind in kinds:
             b = QPushButton()
             b.clicked.connect(lambda _=False, k=kind: self._build(k))
@@ -250,6 +266,7 @@ class AnalysisScreen(QWidget):
             b.setVisible(kind in vm.draft_kinds)
             first = bool(vm.draft_kinds) and kind == vm.draft_kinds[0]
             set_variant(b, "variant", "primary" if first else "")
+            b.setEnabled(not vm.ai_busy)  # one draft at a time while the AI works
         self.draft_label.setText(self.draft_text())
         self.draft_label.setVisible(bool(self.draft_label.text()))
         set_variant(self.draft_label, "tone", "error" if vm.draft_error else "done")
@@ -411,6 +428,21 @@ class AnalysisScreen(QWidget):
     # ---- i18n
     def draft_text(self) -> str:
         vm = self.vm
+        if vm.ai_busy:
+            return QCoreApplication.translate(
+                "AnalysisScreen", "ИИ смотрит кадры и выстраивает историю — около минуты…"
+            )
+        if vm.draft is not None and vm.ai_plan is not None:
+            st, plan = vm.draft.stats, vm.ai_plan
+            return (
+                QCoreApplication.translate(
+                    "AnalysisScreen", "Love Story: %1, склеек %2 · ИИ: «%3» · ≈ $%4"
+                )
+                .replace("%1", format_timecode(st.duration_us))
+                .replace("%2", str(st.cuts))
+                .replace("%3", plan.story)
+                .replace("%4", f"{plan.cost_usd:.2f}")
+            )
         if vm.draft is not None:
             st = vm.draft.stats
             return (
@@ -428,6 +460,16 @@ class AnalysisScreen(QWidget):
 
     def _build(self, kind: DraftKind) -> None:
         """Build a draft; when camera clocks disagree, match them first (or skip) and retry."""
+        if kind == "sde_ai":  # runs in the background: settle the clocks before it starts
+            skip = False
+            if self.vm.needs_clocks():
+                dialog = ClockDialog(self.vm.root, self)
+                result = dialog.exec() if dialog.result() == 0 else dialog.result()
+                if result not in (QDialog.DialogCode.Accepted, SKIPPED):
+                    return
+                skip = result == SKIPPED
+            self.vm.build_ai_draft(skip_clocks=skip)
+            return
         self.vm.build_draft(kind)
         if self.vm.draft_error != "clocks":
             return

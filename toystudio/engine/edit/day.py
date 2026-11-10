@@ -481,15 +481,28 @@ def build_film(clips: list[DayClip], tracks: list[MusicTrack]) -> DayDraft:
                     _stats(shots, clips, len(secs)))  # fmt: skip
 
 
+SDE_US = 88 * S
+
+
+def love_source(clips: list[DayClip]) -> list[DayClip]:
+    """The love story's clips: its section of the day, or every clip when there is none."""
+    love = next((s for s in sections(clips) if s.kind == "love"), None)
+    return love.clips if love else sorted(clips, key=lambda c: (c.time, c.media_id))
+
+
+def slow_track(tracks: list[MusicTrack]) -> MusicTrack | None:
+    """The love story's music: the slowest track of the library."""
+    return _pick_tracks(tracks)[1]
+
+
 def build_clip(clips: list[DayClip], tracks: list[MusicTrack], kind: ClipKind) -> DayDraft:
     """SDE (88 s from the love story) or express (180 s from the whole day)."""
     secs = sections(clips)
     by_id = {c.media_id: c for c in clips}
     if kind == "sde":
-        love = next((s for s in secs if s.kind == "love"), None)
-        source = love.clips if love else clips
-        target = 88 * S
-        track = _pick_tracks(tracks)[1]
+        source = love_source(clips)
+        target = SDE_US
+        track = slow_track(tracks)
     else:
         source, target = clips, 180 * S
         fast = _pick_tracks(tracks)[0]

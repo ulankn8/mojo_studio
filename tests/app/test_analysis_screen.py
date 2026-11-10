@@ -838,7 +838,7 @@ def test_draft_button_only_for_restaurant_formats_when_done(qtbot, project, jobs
     _finish(store, ids, jobs, project)
     assert not screen._draft_box.isHidden()
     visible = [k for k, b in screen.draft_buttons.items() if not b.isHidden()]
-    assert visible == ["film", "restaurant"]
+    assert visible == ["film", "restaurant", "sde_ai"]
     assert screen.draft_buttons["film"].text() == "Черновик до ресторана"
     assert screen.draft_buttons["restaurant"].text() == "Черновик ресторана"
     assert screen.open_folder_button.isHidden() and screen.draft_label.text() == ""
@@ -885,8 +885,8 @@ def test_draft_result_and_error_texts(qtbot, project, jobs, app_store, monkeypat
 def test_draft_buttons_by_format(qtbot, project, jobs, app_store):
     root, store, ids = project
     for fmt, kinds, text in (
-        (ProjectFormat.WEDDING_EXPRESS, ["express"], "Собрать экспресс-видео"),
-        (ProjectFormat.LOVE_STORY, ["sde"], "Собрать клип Love Story"),
+        (ProjectFormat.WEDDING_EXPRESS, ["express", "sde_ai"], "Собрать экспресс-видео"),
+        (ProjectFormat.LOVE_STORY, ["sde_ai", "sde"], "Love Story с ИИ"),
         (ProjectFormat.PODCAST, ["restaurant"], "Собрать черновик для Premiere"),
     ):
         _set_format(root, fmt)
@@ -934,3 +934,61 @@ def test_wrong_clocks_open_the_dialog_then_retry(qtbot, project, jobs, app_store
     screen.draft_buttons["film"].click()
     assert calls == [("film", False), ("film", True)]  # asked, the user skipped, built anyway
     assert screen.draft_label.text().startswith("В записи не нашлось")
+
+
+def _ai_screen(qtbot, project, jobs, app_store, monkeypatch, plan_result):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.jobs.day_draft import LoveInputs
+
+    root, store, ids = project
+    _set_format(root, ProjectFormat.LOVE_STORY)
+    vm = make_vm(project, jobs, app_store)
+    screen = AnalysisScreen(vm, notifier=FakeNotifier())
+    qtbot.addWidget(screen)
+    _finish(store, ids, jobs, project)
+    monkeypatch.setattr(
+        avm,
+        "love_inputs",
+        lambda _root, skip_clocks=False: LoveInputs([], 98.0, 612_000, 88_000_000),
+    )
+    monkeypatch.setattr(avm, "plan_love_story", plan_result)
+    monkeypatch.setattr(vm, "needs_clocks", lambda: False)
+    return vm, screen
+
+
+def test_ai_love_story_runs_in_background_and_shows_the_story(
+    qtbot, project, jobs, app_store, monkeypatch, tmp_path
+):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.core.ai_plan import AiPlan
+    from toystudio.engine.edit.restaurant import DraftStats
+    from toystudio.jobs.restaurant_draft import DraftResult
+
+    plan = AiPlan("Сборы, встреча, крыша", (), "claude-opus-5-5", 21000, 7000, 106)
+    vm, screen = _ai_screen(qtbot, project, jobs, app_store, monkeypatch, lambda *a, **k: plan)
+    stats = DraftStats(duration_us=88_000_000, cuts=47, dropped_us=0, blocks=1)
+    result = DraftResult(tmp_path / "export" / "x.xml", "cut", stats)
+    monkeypatch.setattr(avm, "build_day_draft", lambda *a, **k: result)
+    screen.draft_buttons["sde_ai"].click()
+    assert vm.ai_busy and screen.draft_label.text().startswith("ИИ смотрит кадры")
+    assert not screen.draft_buttons["sde"].isEnabled()
+    qtbot.waitUntil(lambda: not vm.ai_busy, timeout=5000)
+    assert (
+        screen.draft_label.text()
+        == "Love Story: 01:28, склеек 47 · ИИ: «Сборы, встреча, крыша» · ≈ $0.22"
+    )
+    assert screen.draft_buttons["sde"].isEnabled() and not screen.open_folder_button.isHidden()
+
+
+def test_ai_without_a_key_explains_what_to_do(qtbot, project, jobs, app_store, monkeypatch):
+    from toystudio.cloud.director import DirectorError
+
+    def no_key(*_a, **_k):
+        raise DirectorError("no_key")
+
+    vm, screen = _ai_screen(qtbot, project, jobs, app_store, monkeypatch, no_key)
+    screen.draft_buttons["sde_ai"].click()
+    qtbot.waitUntil(lambda: not vm.ai_busy, timeout=5000)
+    assert "console.anthropic.com" in screen.draft_label.text()
+    assert "setx ANTHROPIC_API_KEY" in screen.draft_label.text()
+    assert screen.open_folder_button.isHidden()

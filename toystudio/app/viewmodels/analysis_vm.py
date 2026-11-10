@@ -8,9 +8,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QObject, QTimer, Signal
+from PySide6.QtCore import (
+    QT_TRANSLATE_NOOP,
+    QCoreApplication,
+    QObject,
+    QRunnable,
+    QThreadPool,
+    QTimer,
+    Signal,
+)
 
 from toystudio.app.i18n import current_language
+from toystudio.cloud.director import DirectorError, plan_love_story
+from toystudio.core.ai_plan import AiPlan
 from toystudio.core.eta import DEFAULT_X_RT, SPEECH_X_RT
 from toystudio.core.format import format_eta
 from toystudio.core.models import (
@@ -29,7 +39,7 @@ from toystudio.core.models import (
     StageState,
 )
 from toystudio.engine.analysis.quality import overall_label
-from toystudio.jobs.day_draft import build_day_draft
+from toystudio.jobs.day_draft import build_day_draft, clocks, love_inputs
 from toystudio.jobs.launch import stop_file_for, worker_argv
 from toystudio.jobs.manager import JobManager
 from toystudio.jobs.protocol import Progress
@@ -94,14 +104,42 @@ def _item(m: MomentRow) -> FeedItem:
     )
 
 
-DraftKind = Literal["restaurant", "film", "express", "sde"]
+DraftKind = Literal["restaurant", "film", "express", "sde", "sde_ai"]
 # drafts each format offers after the analysis, in button order
 DRAFT_KINDS: dict[ProjectFormat, tuple[DraftKind, ...]] = {
-    ProjectFormat.WEDDING_FULL: ("film", "restaurant"),
-    ProjectFormat.WEDDING_EXPRESS: ("express",),
-    ProjectFormat.LOVE_STORY: ("sde",),
+    ProjectFormat.WEDDING_FULL: ("film", "restaurant", "sde_ai"),
+    ProjectFormat.WEDDING_EXPRESS: ("express", "sde_ai"),
+    ProjectFormat.LOVE_STORY: ("sde_ai", "sde"),
     ProjectFormat.PODCAST: ("restaurant",),
 }
+
+
+class _AiTask(QObject, QRunnable):
+    """The AI love story off the GUI thread: frames, the request to Claude, the draft."""
+
+    done = Signal(object, object, object)  # DraftResult | None, AiPlan | None, error | None
+
+    def __init__(self, root: Path, skip_clocks: bool) -> None:
+        QObject.__init__(self)
+        QRunnable.__init__(self)
+        self.setAutoDelete(False)  # the VM keeps it until `done` is handled
+        self.root, self.skip_clocks = root, skip_clocks
+
+    def run(self) -> None:
+        try:
+            inp = love_inputs(self.root, skip_clocks=self.skip_clocks)
+            plan = plan_love_story(
+                inp.clips, tempo=inp.tempo, beat_us=inp.beat_us, target_us=inp.target_us
+            )
+            result = build_day_draft(self.root, "sde", ai_plan=plan)
+        except DraftError as e:
+            self.done.emit(None, None, e.code)
+        except DirectorError as e:
+            self.done.emit(None, None, f"ai_{e.code}")
+        except (OSError, sqlite3.Error, ValueError):
+            self.done.emit(None, None, "error")
+        else:
+            self.done.emit(result, plan, None)
 
 
 @dataclass
@@ -172,6 +210,9 @@ class AnalysisVM(QObject):
         self.draft: DraftResult | None = None
         self.draft_error: str | None = None  # DraftError code, or "error"
         self.draft_kind: DraftKind = "restaurant"
+        self.ai_plan: AiPlan | None = None
+        self.ai_busy = False
+        self._ai_task: _AiTask | None = None
         jobs.progress.connect(self._on_progress)
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_finished)
@@ -207,9 +248,41 @@ class AnalysisVM(QObject):
     def can_draft(self) -> bool:
         return bool(self.draft_kinds)
 
+    def needs_clocks(self) -> bool:
+        """Cameras before the restaurant whose clocks still need a pair of clips."""
+        try:
+            store = ProjectStore.open(self.root)
+        except (OSError, sqlite3.Error):
+            return False
+        try:
+            return bool(clocks(store).to_fix)
+        finally:
+            store.close()
+
+    def build_ai_draft(self, *, skip_clocks: bool = False) -> None:
+        """Ask the AI director in the background; `changed` fires when the draft is ready."""
+        if self.ai_busy:
+            return
+        self.draft_kind, self.draft, self.draft_error, self.ai_plan = "sde_ai", None, None, None
+        self.ai_busy = True
+        self._ai_task = _AiTask(self.root, skip_clocks)
+        self._ai_task.done.connect(self._on_ai_done)
+        QThreadPool.globalInstance().start(self._ai_task)
+        self.changed.emit()
+
+    def _on_ai_done(self, result: object, plan: object, error: object) -> None:
+        self.ai_busy, self._ai_task = False, None
+        self.draft = result if isinstance(result, DraftResult) else None
+        self.ai_plan = plan if isinstance(plan, AiPlan) else None
+        self.draft_error = error if isinstance(error, str) else None
+        self.changed.emit()
+
     def build_draft(self, kind: DraftKind = "restaurant", *, skip_clocks: bool = False) -> None:
         """Build a draft; error "clocks" means the screen has to match camera clocks first."""
-        self.draft_kind = kind
+        if kind == "sde_ai":
+            self.build_ai_draft(skip_clocks=skip_clocks)
+            return
+        self.draft_kind, self.ai_plan = kind, None
         try:
             if kind == "restaurant":
                 result = build_draft(self.root)
