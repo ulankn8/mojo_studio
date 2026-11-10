@@ -33,7 +33,7 @@ class TopBar(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(16, 0, 16, 0)
         lay.setSpacing(8)
-        self._logo = QLabel("Той Студия")
+        self._logo = QLabel("T-Studio")
         lay.addWidget(self._logo)
         lay.addSpacing(16)
         self._projects_btn = QPushButton(QCoreApplication.translate("Shell", "Проекты"))

@@ -38,7 +38,7 @@ class Notifier:
         if self._tray is None:
             tray = QSystemTrayIcon(self.icon)
             tray.setContextMenu(self.menu)
-            tray.setToolTip("Той Студия")
+            tray.setToolTip("T-Studio")
             tray.messageClicked.connect(self._clicked)
             tray.activated.connect(self._tray_activated)
             self._tray = tray

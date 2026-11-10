@@ -61,9 +61,9 @@
     </message>
     <message>
         <location filename="../shell.py" line="264"/>
-        <source>Той Студия</source>
+        <source>T-Studio</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
-        <translation type="unfinished">Той Студия</translation>
+        <translation type="unfinished">T-Studio</translation>
     </message>
     <message>
         <location filename="../screens/analysis.py" line="292"/>

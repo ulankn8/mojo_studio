@@ -164,17 +164,17 @@ def _stage_state(root: Path) -> StageState:
 def test_app_paths_windows():
     env = {"USERPROFILE": "/u/aibek", "APPDATA": "/u/aibek/AppData/Roaming"}
     projects, db = app_paths(env, "win32", Path("/ignored"))
-    assert projects == Path("/u/aibek/Videos/Той Студия")
+    assert projects == Path("/u/aibek/Videos/T-Studio")
     assert db == Path("/u/aibek/AppData/Roaming/ToyStudio/app.db")
 
 
 def test_app_paths_mac_and_linux():
     assert app_paths({}, "darwin", Path("/h")) == (
-        Path("/h/Movies/Той Студия"),
+        Path("/h/Movies/T-Studio"),
         Path("/h/.toystudio/app.db"),
     )
     assert app_paths({}, "linux", Path("/h")) == (
-        Path("/h/Videos/Той Студия"),
+        Path("/h/Videos/T-Studio"),
         Path("/h/.toystudio/app.db"),
     )
 
@@ -401,7 +401,7 @@ def test_analysis_a_finishes_while_b_is_viewed(shell, jobs):
     jobs.finish(f"analyze:{a}")
     assert set(shell.analyses) == {b}
     assert [r.status for r in shell.app_store.list_projects() if r.root == a] == ["analysis_done"]
-    assert shell.notifier.shown == [("Той Студия", "Анализ «А» готов")]
+    assert shell.notifier.shown == [("T-Studio", "Анализ «А» готов")]
     assert shell.taskbar.values[-1] is None
     shell.top_bar.click_projects()
     assert _card(shell, a)._badge.text() == "Анализ завершён"

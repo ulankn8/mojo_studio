@@ -19,7 +19,7 @@ from toystudio.app.widgets.icons import app_icon
 from toystudio.storage.app_store import AppStore
 
 log = logging.getLogger(__name__)
-PROJECTS_FOLDER = "Той Студия"
+PROJECTS_FOLDER = "T-Studio"
 HOME_ENV = "TOYSTUDIO_HOME"
 
 

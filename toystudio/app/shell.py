@@ -58,7 +58,7 @@ class Shell(QMainWindow):
     ) -> None:
         super().__init__()
         self.setMinimumSize(QSize(1280, 720))
-        self.setWindowTitle("Той Студия")
+        self.setWindowTitle("T-Studio")
         self.app_store = app_store
         self.projects_dir = projects_dir.resolve()
         self.jobs = jobs if jobs is not None else JobManager(max_parallel=1, parent=self)
@@ -282,7 +282,7 @@ class Shell(QMainWindow):
         if self._closing or not vm.notify_when_done or vm.all_failed or vm.missing_files:
             return  # nothing to celebrate yet: screen 3 lists what went wrong
         self.notifier.notify(
-            QCoreApplication.translate("AnalysisScreen", "Той Студия"),
+            QCoreApplication.translate("AnalysisScreen", "T-Studio"),
             vm.finish_text(),
             lambda r=vm.root: self._open_from_notification(r),
         )
@@ -301,7 +301,7 @@ class Shell(QMainWindow):
     def _ask_close(self) -> CloseChoice:
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Той Студия")
+        box.setWindowTitle("T-Studio")
         box.setText(
             QCoreApplication.translate(
                 "Shell",
