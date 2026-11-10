@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 
-from toystudio.engine.analysis.sync import estimate_offset, sync_project
+from toystudio.engine.analysis.sync import estimate_offset, sync_project, sync_tracks
 
 
 def noise_env(n: int, seed: int) -> np.ndarray:
@@ -75,3 +75,52 @@ def test_reference_is_longest_ties_lowest_id():
     res = {r.media_id: r for r in sync_project({5: noise_env(6000, 1), 2: noise_env(6000, 1)})}
     assert res[2].offset_us == 0 and res[2].confidence == math.inf
     assert res[5].offset_us == 0
+
+
+# --- sync by tracks: restaurant / podcast ---
+
+
+def _by_id(results):
+    return {r.media_id: r for r in results}
+
+
+def test_tracks_cameras_on_speech_recording_split_in_files():
+    take = noise_env(120_00, 5)  # 120 s recorder take, split at 70 s into two files
+    speech = [(10, take[:70_00]), (11, take[70_00:])]
+    main = {1: take[80_00:115_00]}  # V1 clip 80..115 s: inside the second file
+    cutaway = {2: take[20_00:60_00]}  # V2 clip 20..60 s: inside the first file
+    r = _by_id(sync_tracks(main, cutaway, speech))
+    assert r[10].offset_us == 0 and r[11].offset_us == 70_000_000
+    assert abs(r[1].offset_us - 80_000_000) <= 10_000 and r[1].confidence >= 6.0
+    assert abs(r[2].offset_us - 20_000_000) <= 10_000
+
+
+def test_tracks_without_speech_longest_main_is_reference():
+    base = noise_env(90_00, 6)
+    main = {1: base[20_00:70_00], 3: base[30_00:65_00]}  # longest main: 50 s from 20 s
+    cutaway = {2: base[:90_00]}  # the longest file overall, but a cutaway never leads
+    r = _by_id(sync_tracks(main, cutaway, []))
+    assert r[1].offset_us == 0 and math.isinf(r[1].confidence)
+    assert abs(r[3].offset_us - 10_000_000) <= 10_000
+    assert abs(r[2].offset_us + 20_000_000) <= 10_000  # starts 20 s before the reference
+
+
+def test_tracks_unrelated_camera_gets_no_offset():
+    take = noise_env(100_00, 7)
+    r = _by_id(sync_tracks({1: noise_env(40_00, 99)}, {}, [(10, take)]))
+    assert r[1].offset_us is None and r[1].confidence < 6.0
+    assert r[10].offset_us == 0
+
+
+def test_tracks_camera_without_audio_and_empty_speech_file():
+    take = noise_env(80_00, 8)
+    r = _by_id(sync_tracks({1: None, 2: take[10_00:60_00]}, {}, [(10, None), (11, take)]))
+    assert r[1].offset_us is None  # no audio, nothing to match
+    assert r[10].offset_us is None  # unreadable speech file is not laid on the timeline
+    assert r[11].offset_us == 0
+    assert abs(r[2].offset_us - 10_000_000) <= 10_000
+
+
+def test_tracks_nothing_with_audio():
+    r = _by_id(sync_tracks({1: None}, {2: None}, []))
+    assert r[1].offset_us is None and r[2].offset_us is None

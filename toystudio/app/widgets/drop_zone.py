@@ -1,4 +1,4 @@
-"""Drop zone for video or music; turns into a file list with progress once files are added."""
+"""Drop zone of one track; turns into a file list with progress once files are added."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from toystudio.app.theme.apply import set_variant
 from toystudio.app.widgets.elided import ElidedLabel
 from toystudio.app.widgets.icons import IconLabel
 from toystudio.core.format import format_size, format_timecode
-from toystudio.core.models import MediaKind
+from toystudio.core.models import MediaKind, MediaRole
 
 VIDEO_EXT = {".mp4", ".mov", ".mts", ".m2ts", ".mkv", ".avi"}
 MUSIC_EXT = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
@@ -91,9 +91,10 @@ class DropZone(QFrame):
     files_dropped = Signal(list)
     replace_requested = Signal(str)
 
-    def __init__(self, kind: MediaKind, parent: QWidget | None = None) -> None:
+    def __init__(self, role: MediaRole | MediaKind, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._kind = kind
+        self.role = role if isinstance(role, MediaRole) else MediaRole.default_for(role)
+        self._kind = self.role.kind
         self._rows: list[FileRow] = []
         self.setObjectName("DropZone")
         self.setAcceptDrops(True)
@@ -110,8 +111,16 @@ class DropZone(QFrame):
         self._prompt.setProperty("role", "prompt")
         self.choose_button = QPushButton()
         self.choose_button.clicked.connect(self._browse)
-        for w in (self._icon, self._prompt, self.choose_button):
+        self.folder_button = QPushButton()  # a music library is a folder
+        self.folder_button.clicked.connect(self._browse_folder)
+        self.folder_button.setVisible(self.role is MediaRole.MUSIC)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.choose_button)
+        buttons.addWidget(self.folder_button)
+        for w in (self._icon, self._prompt):
             elay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
+        elay.addLayout(buttons)
+        buttons.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         root.addWidget(self._empty)
         # list view
         self._list = QWidget()
@@ -159,6 +168,13 @@ class DropZone(QFrame):
         names, _ = QFileDialog.getOpenFileNames(self, "", "", pattern)
         if names:
             self.files_dropped.emit([Path(n) for n in names])
+
+    def _browse_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "")
+        if folder:
+            files = collect_media_paths([Path(folder)], self._kind)
+            if files:
+                self.files_dropped.emit(files)
 
     # ---- rows
     def set_rows(self, rows: list[FileRow]) -> None:
@@ -234,10 +250,13 @@ class DropZone(QFrame):
     def retranslate(self) -> None:
         if self._kind is MediaKind.VIDEO:
             prompt = QCoreApplication.translate("DropZone", "Перетащите видео сюда")
+        elif self.role is MediaRole.SPEECH:
+            prompt = QCoreApplication.translate("DropZone", "Перетащите звук сюда")
         else:
             prompt = QCoreApplication.translate("DropZone", "Перетащите музыку сюда")
         self._prompt.setText(prompt)
         self.choose_button.setText(QCoreApplication.translate("DropZone", "Выбрать файлы"))
+        self.folder_button.setText(QCoreApplication.translate("DropZone", "Выбрать папку"))
         self.add_button.setText(QCoreApplication.translate("DropZone", "Добавить ещё"))
         replace = QCoreApplication.translate("DropZone", "Заменить")
         for r, (status, btn) in zip(self._rows, self._row_widgets, strict=True):

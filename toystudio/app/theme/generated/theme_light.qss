@@ -193,15 +193,20 @@ QFrame#DropZone[dragover="true"] {
     border: 2px solid #a52a3a;
     background: #f8e4e7;
 }
+QLabel#TrackTag {
+    color: #a52a3a;
+    font-weight: 600;
+}
+QScrollArea#TrackScroll, QWidget#TrackColumn { background: transparent; }
 QFrame#DropRow { background: transparent; border-bottom: 1px solid #e2e4e8; }
 
 /* ProjectCard */
-QFrame#ProjectCard {
+QFrame#ProjectCard, QFrame#FormatCard {
     background: #ffffff;
     border: 1px solid #e2e4e8;
     border-radius: 10px;
 }
-QFrame#ProjectCard:hover { border: 1px solid #8b919b; }
+QFrame#ProjectCard:hover, QFrame#FormatCard:hover { border: 1px solid #8b919b; }
 QFrame#ProjectCard:focus { border: 2px solid #1f6f9e; }
 QLabel#ProjectPreview {
     background: #000000;

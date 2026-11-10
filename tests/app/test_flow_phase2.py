@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from tests.media_fixtures import make_clip, make_toast_clip, needs_ffmpeg
 from toystudio.app.main import app_paths
 from toystudio.app.shell import Shell
-from toystudio.core.models import StageName
+from toystudio.core.models import ProjectFormat, StageName
 from toystudio.jobs.protocol import Progress
 from toystudio.storage.app_store import AppStore
 from toystudio.storage.project_store import ProjectStore
@@ -64,6 +64,8 @@ def _clips(tmp_path, duration_s: float):
 
 def _add_files_and_start(qtbot, w: Shell, files, budget: Budget) -> None:
     qtbot.mouseClick(w.projects_screen.new_button, Qt.MouseButton.LeftButton)
+    assert w.current_screen() is w.format_picker
+    qtbot.mouseClick(w.format_picker.buttons[ProjectFormat.TOI], Qt.MouseButton.LeftButton)
     np = w.new_project_screen
     assert np is not None and w.current_screen() is np
     assert w.top_bar.step_enabled()[2:] == [False, False, False]

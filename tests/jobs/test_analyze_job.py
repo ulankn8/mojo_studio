@@ -20,8 +20,10 @@ from tests.media_fixtures import (
 from toystudio.core.models import (
     STAGE_ORDER,
     MediaKind,
+    MediaRole,
     MediaStatus,
     MomentType,
+    ProjectFormat,
     StageName,
     StageState,
     ToiKind,
@@ -326,10 +328,10 @@ def test_unexpected_sync_error_marks_sync_failed_and_finishes(tmp_path: Path, mo
     clip = _clip(tmp_path, "клип.mp4", duration_s=3)
     project = _project(tmp_path, clip)
 
-    def boom(_envelopes):
+    def boom(*_args):
         raise RuntimeError("sync broke")
 
-    monkeypatch.setattr(analyze_job, "sync_project", boom)
+    monkeypatch.setattr(analyze_job, "sync_tracks", boom)
     ctx = _Ctx(project, tmp_path / "app.db")
     rc = worker_main_run(ctx)
     assert rc == 0 and isinstance(ctx.msgs[-1], Done)
@@ -601,3 +603,76 @@ def test_moments_rerun_when_an_earlier_stage_ran(tmp_path: Path) -> None:
     ctx = _Ctx(project, app_db)
     assert worker_main_run(ctx) == 0
     assert not [e for e in events(ctx.msgs, "stage") if e["media_id"] == 1]
+
+
+# --- tracks: speech from the sound desk, mixed shooting, music library ---
+
+
+def _tracks_project(tmp_path: Path, files: list[tuple[Path, MediaRole]]) -> Path:
+    root = tmp_path / "Той Студия" / "Свадьба полностью"
+    s = ProjectStore.create(
+        root, "Свадьба", ToiKind.WEDDING, date(2026, 6, 14), ProjectFormat.WEDDING_FULL
+    )
+    try:
+        for path, role in files:
+            s.add_media(path, role, path.stat().st_size, False)
+    finally:
+        s.close()
+    return root
+
+
+def test_speech_recording_split_in_files_is_the_restaurant_reference(tmp_path: Path) -> None:
+    # recorder take of 80 s split into two wav files at 40 s; V1 clip = 35 s from 42 s
+    take = noise_burst_track(80, seed=7)
+    rate = 16_000
+    rec1 = write_wav16(tmp_path / "src" / "071424-011212.wav", take[: 40 * rate])
+    rec2 = write_wav16(tmp_path / "src" / "071424-011252.wav", take[40 * rate :])
+    main = make_noise_clip(
+        tmp_path / "src" / "штатив.mp4", duration_s=35, start_s=42, track_s=80, seed=7
+    )
+    pre = _clip(tmp_path, "дом жениха.mp4", duration_s=3)
+    song = write_wav16(tmp_path / "src" / "песня.wav", noise_burst_track(5, seed=3))
+    project = _tracks_project(
+        tmp_path,
+        [
+            (rec2, MediaRole.SPEECH),  # added out of order: names give the recording order
+            (rec1, MediaRole.SPEECH),
+            (main, MediaRole.MAIN),
+            (pre, MediaRole.PRE),
+            (song, MediaRole.MUSIC),
+        ],
+    )
+    s = run_worker("analyze", project, app_db=tmp_path / "app.db")
+    try:
+        rows = {m.path.name: m for m in s.list_media()}
+        r1, r2 = rows["071424-011212.wav"], rows["071424-011252.wav"]
+        for rec in (r1, r2):
+            assert s.stage(rec.id, StageName.PROXY).state is StageState.DONE
+            assert s.stage(rec.id, StageName.SPEECH).state is StageState.DONE
+            for st in (StageName.SCENES, StageName.QUALITY, StageName.MOMENTS):
+                assert s.stage(rec.id, st).state is StageState.SKIPPED
+        assert r1.sync_offset_us == 0 and r2.sync_offset_us == 40_000_000
+        v1 = rows["штатив.mp4"]
+        assert abs(v1.sync_offset_us - 42_000_000) <= 20_000 and v1.sync_confidence >= 6.0
+        assert rows["дом жениха.mp4"].sync_offset_us is None  # no common clock before
+        assert s.stage(rows["дом жениха.mp4"].id, StageName.SCENES).state is StageState.DONE
+        assert s.stage(rows["песня.wav"].id, StageName.PROBE) is None  # music is not analysed
+        assert s.step() == "analysis_done"
+    finally:
+        s.close()
+
+
+def test_speech_file_that_is_not_audio_is_marked_corrupt(tmp_path: Path) -> None:
+    bad = tmp_path / "src" / "пульт.wav"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_bytes(b"not a wav at all" * 100)
+    main = _clip(tmp_path, "штатив.mp4", duration_s=3)
+    project = _tracks_project(tmp_path, [(bad, MediaRole.SPEECH), (main, MediaRole.MAIN)])
+    s = run_worker("analyze", project, app_db=tmp_path / "app.db")
+    try:
+        rows = {m.path.name: m for m in s.list_media()}
+        assert rows["пульт.wav"].status is MediaStatus.CORRUPT
+        assert s.stage(rows["штатив.mp4"].id, StageName.MOMENTS).state is StageState.DONE
+        assert s.step() == "analysis_done"
+    finally:
+        s.close()

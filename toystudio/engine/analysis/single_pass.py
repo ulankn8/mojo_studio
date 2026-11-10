@@ -279,6 +279,65 @@ def run(
         raise
 
 
+def run_audio(
+    src: Path,
+    info: MediaInfo,
+    out: Outputs,
+    *,
+    on_progress: Callable[[float], None],
+    should_stop: Callable[[], bool],
+) -> None:
+    """Audio-only file (speech from the sound desk): wav 16 kHz mono + envelope, no proxy."""
+    if not info.has_audio:
+        raise ValueError("audio pass needs an audio stream")
+    for p in (out.wav, out.envelope):
+        p.parent.mkdir(parents=True, exist_ok=True)
+    _cleanup(out)
+    duration_s = info.duration_us / US_PER_S
+    cmd = [find_tool("ffmpeg"), "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error"]
+    cmd += ["-progress", "pipe:2", "-y", "-i", str(src), "-map", "0:a:0"]
+    cmd += ["-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", "-f", "wav", str(part_of(out.wav))]
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.DEVNULL,
+        creationflags=popen_flags(),
+    )
+    assert proc.stderr is not None
+    progress = _Progress(proc.stderr)
+    try:
+        last_emit = float("-inf")
+        while True:
+            if should_stop():
+                raise Stopped()
+            try:
+                rc = proc.wait(timeout=POLL_S)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            now = time.monotonic()
+            if now - last_emit >= PROGRESS_EVERY_S:
+                last_emit = now
+                on_progress(min(progress.out_time_us / US_PER_S, duration_s))
+        progress.join()
+        if rc != 0:
+            raise FfmpegFailed(f"ffmpeg exited with code {rc}", "\n".join(progress.tail))
+        env_part = part_of(out.envelope)
+        with env_part.open("wb") as f:
+            np.save(f, envelope_from_wav(part_of(out.wav)))
+        os.replace(env_part, out.envelope)
+        os.replace(part_of(out.wav), out.wav)  # wav last: it marks the pass as complete
+        on_progress(duration_s)
+    except BaseException:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+        progress.join()
+        _cleanup(out)
+        raise
+
+
 def _finalize(out: Outputs, info: MediaInfo, metrics: dict[str, np.ndarray]) -> None:
     frames_part = part_of(out.frames)
     with frames_part.open("wb") as f:

@@ -12,7 +12,16 @@ from toystudio.app.screens.analysis import AnalysisScreen
 from toystudio.app.screens.new_project import NewProjectScreen
 from toystudio.app.shell import Shell
 from toystudio.app.viewmodels import new_project_vm as vm_mod
-from toystudio.core.models import MediaInfo, MediaKind, MediaStatus, StageName, StageState, ToiKind
+from toystudio.core.models import (
+    MediaInfo,
+    MediaKind,
+    MediaRole,
+    MediaStatus,
+    ProjectFormat,
+    StageName,
+    StageState,
+    ToiKind,
+)
 from toystudio.jobs.launch import stop_file_for
 from toystudio.jobs.protocol import Event
 from toystudio.storage.project_store import ProjectStore
@@ -184,6 +193,8 @@ def test_starts_on_projects_without_stepper(shell):
 
 def test_new_project_and_back(shell):
     qtbot_click(shell.projects_screen.new_button)
+    assert shell.current_screen() is shell.format_picker
+    qtbot_click(shell.format_picker.buttons[ProjectFormat.WEDDING_FULL])
     assert isinstance(shell.current_screen(), NewProjectScreen)
     assert not shell.top_bar._steps[0].isHidden()
     assert shell.top_bar.step_enabled() == [True, False, False, False, False]
@@ -202,6 +213,9 @@ def test_dropped_files_create_project_and_start_import(shell, jobs, tmp_path):
     clip.parent.mkdir()
     clip.write_bytes(b"x" * 10)
     shell.projects_vm.request_new([clip])
+    assert shell.current_screen() is shell.format_picker  # «Что монтируем?» comes first
+    assert jobs.started == []
+    shell.format_picker.buttons[ProjectFormat.TOI].click()
     screen = shell.new_project_screen
     assert screen is not None and shell.current_screen() is screen
     root = screen.vm.root
@@ -514,3 +528,104 @@ def test_no_ready_notification_while_a_file_is_missing(shell, jobs):
     assert shell.notifier.shown == []
     assert shell.analysis_screen.missing_label.isVisibleTo(shell)
     assert [r.status for r in shell.app_store.list_projects() if r.root == a] == ["analysis"]
+
+
+# --- «Что монтируем?» and tracks ---
+
+
+def _src(tmp_path: Path, name: str) -> Path:
+    p = tmp_path / "src" / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"x" * 10)
+    return p
+
+
+def _pick(shell, fmt: ProjectFormat, files: list[Path] | None = None):
+    shell.projects_vm.request_new(files or [])
+    shell.format_picker.buttons[fmt].click()
+    return shell.new_project_screen
+
+
+def test_picker_offers_every_format(shell):
+    shell.projects_vm.request_new([])
+    assert shell.current_screen() is shell.format_picker
+    assert set(shell.format_picker.buttons) == set(ProjectFormat)
+    assert shell.format_picker.buttons[ProjectFormat.WEDDING_FULL].text() == "Полный фильм"
+    assert shell.new_project_screen is None  # nothing is created before the choice
+
+
+def test_full_wedding_shows_five_tracks_in_order(shell):
+    screen = _pick(shell, ProjectFormat.WEDDING_FULL)
+    assert list(screen.zones) == [
+        MediaRole.PRE,
+        MediaRole.MAIN,
+        MediaRole.CUTAWAY,
+        MediaRole.SPEECH,
+        MediaRole.MUSIC,
+    ]
+    labels = [label.text() for label in screen._track_labels.values()]
+    assert labels[0].startswith("До ресторана") and labels[1] == "Ресторан: основная камера"
+    assert not any(chip.isVisibleTo(screen) for chip in screen.chips.values())
+    assert screen._format_label.text() == "Свадьба · полный фильм"
+
+
+def test_express_has_shooting_and_music_only(shell):
+    screen = _pick(shell, ProjectFormat.WEDDING_EXPRESS)
+    assert list(screen.zones) == [MediaRole.PRE, MediaRole.MUSIC]
+    assert screen.music_zone.folder_button.isVisibleTo(screen.music_zone)
+    assert not screen.zones[MediaRole.PRE].folder_button.isVisibleTo(screen.zones[MediaRole.PRE])
+
+
+def test_files_dropped_in_a_track_keep_its_role(shell, jobs, tmp_path):
+    screen = _pick(shell, ProjectFormat.WEDDING_FULL)
+    screen.zones[MediaRole.SPEECH].files_dropped.emit([_src(tmp_path, "071424-011212.WAV")])
+    screen.zones[MediaRole.CUTAWAY].files_dropped.emit([_src(tmp_path, "C0001.MP4")])
+    store = ProjectStore.open_readonly(screen.vm.root)
+    try:
+        assert store.format is ProjectFormat.WEDDING_FULL
+        roles = {m.path.name: m.role for m in store.list_media()}
+        assert roles == {"071424-011212.WAV": MediaRole.SPEECH, "C0001.MP4": MediaRole.CUTAWAY}
+        assert ProjectStore.peek(screen.vm.root).kind is ToiKind.WEDDING
+    finally:
+        store.close()
+    assert len(screen.zones[MediaRole.SPEECH].row_status_texts()) == 1
+    assert screen.zones[MediaRole.MAIN].row_status_texts() == []
+
+
+def test_files_dropped_on_projects_go_to_the_first_video_track(shell, tmp_path):
+    screen = _pick(shell, ProjectFormat.WEDDING_FULL, [_src(tmp_path, "DJI_0565_D.MP4")])
+    assert len(screen.zones[MediaRole.PRE].row_status_texts()) == 1
+    assert screen.zones[MediaRole.MAIN].row_status_texts() == []
+
+
+def test_reopened_project_shows_its_tracks(shell, tmp_path):
+    screen = _pick(shell, ProjectFormat.PODCAST)
+    screen.zones[MediaRole.SPEECH].files_dropped.emit([_src(tmp_path, "mic.wav")])
+    root = screen.vm.root
+    shell.show_projects()
+    shell.show_new_project(root=root)
+    again = shell.new_project_screen
+    assert list(again.zones) == [
+        MediaRole.MAIN,
+        MediaRole.CUTAWAY,
+        MediaRole.SPEECH,
+        MediaRole.MUSIC,
+    ]
+    assert len(again.zones[MediaRole.SPEECH].row_status_texts()) == 1
+
+
+def test_old_projects_open_as_toi_with_kind_chips(shell):
+    root = _project(shell, "Той", video=True)
+    shell.show_new_project(root=root)
+    screen = shell.new_project_screen
+    assert list(screen.zones) == [MediaRole.MAIN, MediaRole.MUSIC]
+    assert screen.chips[ToiKind.TOI].isVisibleTo(screen)
+    assert screen._track_labels == {}  # the layout before formats: no track headers
+
+
+def test_picker_and_tracks_in_kyrgyz(shell):
+    assert shell.set_language("ky")
+    shell.projects_vm.request_new([])
+    assert shell.format_picker._title.text() != "Что монтируем?"
+    screen = _pick(shell, ProjectFormat.WEDDING_FULL)
+    assert screen._track_labels[MediaRole.MUSIC].text() != "Библиотека музыки"

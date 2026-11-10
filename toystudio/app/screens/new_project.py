@@ -1,10 +1,10 @@
-"""Screen 2: project details on the left, video and music drop zones on the right."""
+"""Screen 2: project details on the left, one drop zone per track of the format on the right."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QDate, QEvent
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QDate, QEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +27,7 @@ from toystudio.app.viewmodels.new_project_vm import DiskCheck, NewProjectVM
 from toystudio.app.widgets.banner import Banner
 from toystudio.app.widgets.drop_zone import MUSIC_EXT, VIDEO_EXT, DropZone
 from toystudio.core.format import format_eta, format_size
-from toystudio.core.models import MediaKind, ToiKind
+from toystudio.core.models import MediaKind, MediaRole, ProjectFormat, ToiKind
 
 _CHIP_COLUMNS = 3
 
@@ -38,6 +39,43 @@ def _scrolling(zone: DropZone) -> QScrollArea:
     area.setMinimumHeight(110)
     area.setWidget(zone)
     return area
+
+
+_WEDDING = (ProjectFormat.WEDDING_FULL, ProjectFormat.WEDDING_EXPRESS)
+# role -> (tag, track name); weddings name the restaurant tracks
+_TRACK: dict[MediaRole, tuple[str, str]] = {
+    MediaRole.PRE: ("", QT_TRANSLATE_NOOP("NewProjectScreen", "Вся съёмка, камеры вперемешку")),
+    MediaRole.MAIN: ("V1", QT_TRANSLATE_NOOP("NewProjectScreen", "Основная камера")),
+    MediaRole.CUTAWAY: ("V2", QT_TRANSLATE_NOOP("NewProjectScreen", "Подсъёмка, вторая камера")),
+    MediaRole.SPEECH: (
+        "A1",
+        QT_TRANSLATE_NOOP("NewProjectScreen", "Речь: звук с пульта или микрофонов"),
+    ),
+    MediaRole.MUSIC: ("♪", QT_TRANSLATE_NOOP("NewProjectScreen", "Библиотека музыки")),
+}
+_WEDDING_TRACK: dict[MediaRole, str] = {
+    MediaRole.PRE: QT_TRANSLATE_NOOP(
+        "NewProjectScreen", "До ресторана: дом жениха, дорога, ЗАГС, невеста, лав-стори, фуршет"
+    ),
+    MediaRole.MAIN: QT_TRANSLATE_NOOP("NewProjectScreen", "Ресторан: основная камера"),
+    MediaRole.CUTAWAY: QT_TRANSLATE_NOOP("NewProjectScreen", "Ресторан: подсъёмка"),
+    MediaRole.SPEECH: QT_TRANSLATE_NOOP("NewProjectScreen", "Ресторан: речь, звук с пульта"),
+}
+_FORMAT_TEXT: dict[ProjectFormat, str] = {
+    ProjectFormat.WEDDING_EXPRESS: QT_TRANSLATE_NOOP(
+        "NewProjectScreen", "Свадьба · экспресс-видео"
+    ),
+    ProjectFormat.WEDDING_FULL: QT_TRANSLATE_NOOP("NewProjectScreen", "Свадьба · полный фильм"),
+    ProjectFormat.LOVE_STORY: QT_TRANSLATE_NOOP("NewProjectScreen", "Love Story"),
+    ProjectFormat.PODCAST: QT_TRANSLATE_NOOP("NewProjectScreen", "Подкаст или интервью"),
+    ProjectFormat.AD: QT_TRANSLATE_NOOP("NewProjectScreen", "Рекламный ролик"),
+    ProjectFormat.TOI: QT_TRANSLATE_NOOP("NewProjectScreen", "Той, юбилей и другое"),
+}
+
+
+def track_name(fmt: ProjectFormat, role: MediaRole) -> str:
+    source = _WEDDING_TRACK.get(role) if fmt in _WEDDING else None
+    return QCoreApplication.translate("NewProjectScreen", source or _TRACK[role][1])
 
 
 def _filter(kind: MediaKind) -> str:
@@ -60,6 +98,9 @@ class NewProjectScreen(QWidget):
         left.setSpacing(8)
         self._title = QLabel()
         self._title.setProperty("role", "title")
+        self._format_label = QLabel()
+        self._format_label.setProperty("role", "label")
+        self._format_label.setProperty("tone", "muted")
         self._name_label = QLabel()
         self._name_label.setProperty("role", "label")
         self.name_edit = QLineEdit()
@@ -85,7 +126,12 @@ class NewProjectScreen(QWidget):
             chips.addWidget(b, i // _CHIP_COLUMNS, i % _CHIP_COLUMNS)
             b.clicked.connect(lambda _=False, k=kind: setattr(self.vm, "kind", k))
         self.chips[vm.kind].setChecked(True)
+        toi = vm.format is ProjectFormat.TOI  # other formats know their kind themselves
+        self._kind_label.setVisible(toi)
+        for chip in self.chips.values():
+            chip.setVisible(toi)
         left.addWidget(self._title)
+        left.addWidget(self._format_label)
         left.addSpacing(8)
         left.addWidget(self._name_label)
         left.addWidget(self.name_edit)
@@ -105,12 +151,45 @@ class NewProjectScreen(QWidget):
         self.info_banner = Banner("info")
         self.error_banner.hide()
         self.info_banner.hide()
-        self.video_zone = DropZone(MediaKind.VIDEO)
-        self.music_zone = DropZone(MediaKind.MUSIC)
         right.addWidget(self.error_banner)
         right.addWidget(self.info_banner)
-        right.addWidget(_scrolling(self.video_zone), 6)
-        right.addWidget(_scrolling(self.music_zone), 4)
+        self.zones: dict[MediaRole, DropZone] = {r: DropZone(r) for r in vm.roles}
+        self._track_labels: dict[MediaRole, QLabel] = {}
+        if vm.format is ProjectFormat.TOI:  # the layout before formats: video 6, music 4
+            for role, stretch in zip(vm.roles, (6, 4), strict=True):
+                right.addWidget(_scrolling(self.zones[role]), stretch)
+        else:  # tracks one under another, the whole column scrolls
+            column = QWidget()
+            column.setObjectName("TrackColumn")
+            col = QVBoxLayout(column)
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(6)
+            for role, zone in self.zones.items():
+                head = QHBoxLayout()
+                head.setSpacing(8)
+                if _TRACK[role][0]:
+                    tag = QLabel(_TRACK[role][0])
+                    tag.setObjectName("TrackTag")
+                    head.addWidget(tag)
+                label = QLabel()
+                label.setProperty("role", "label")
+                self._track_labels[role] = label
+                head.addWidget(label, 1)
+                col.addSpacing(6)
+                col.addLayout(head)
+                # never squeeze a zone below its content: the column scrolls instead
+                zone.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+                col.addWidget(zone)
+            col.addStretch(1)
+            area = QScrollArea()
+            area.setObjectName("TrackScroll")
+            area.setWidgetResizable(True)
+            area.setFrameShape(QScrollArea.Shape.NoFrame)
+            area.setWidget(column)
+            right.addWidget(area, 1)
+        videos = [z for r, z in self.zones.items() if r.kind is MediaKind.VIDEO]
+        self.video_zone = videos[0]  # first video track: where files dropped on «Проекты» go
+        self.music_zone = self.zones[MediaRole.MUSIC]
         self._disk_label = QLabel()
         self._disk_label.setProperty("role", "label")
         self._disk_label.setProperty("tone", "muted")
@@ -140,10 +219,9 @@ class NewProjectScreen(QWidget):
         self.name_edit.textChanged.connect(lambda t: setattr(self.vm, "name", t))
         self.date_edit.dateChanged.connect(self._on_date_edited)
         self.copy_check.toggled.connect(lambda on: setattr(self.vm, "copy", on))
-        self.video_zone.files_dropped.connect(lambda p: vm.add_files(MediaKind.VIDEO, p))
-        self.music_zone.files_dropped.connect(lambda p: vm.add_files(MediaKind.MUSIC, p))
-        self.video_zone.replace_requested.connect(lambda m: self._replace(int(m), MediaKind.VIDEO))
-        self.music_zone.replace_requested.connect(lambda m: self._replace(int(m), MediaKind.MUSIC))
+        for role, zone in self.zones.items():
+            zone.files_dropped.connect(lambda p, r=role: vm.add_files(r, p))
+            zone.replace_requested.connect(lambda m, r=role: self._replace(int(m), r.kind))
         self.error_banner.action.connect(self._on_banner_action)
         self.start_button.clicked.connect(vm.start_analysis)
         vm.rows_changed.connect(self._on_rows)
@@ -156,9 +234,11 @@ class NewProjectScreen(QWidget):
         self.retranslate()
 
     # ---- vm -> widgets
-    def _on_rows(self, kind: MediaKind, rows: list) -> None:
-        (self.video_zone if kind is MediaKind.VIDEO else self.music_zone).set_rows(rows)
-        self._has_files = bool(self.vm.rows(MediaKind.VIDEO) or self.vm.rows(MediaKind.MUSIC))
+    def _on_rows(self, role: MediaRole, rows: list) -> None:
+        zone = self.zones.get(role)
+        if zone is not None:
+            zone.set_rows(rows)
+        self._has_files = any(self.vm.rows(r) for r in self.zones)
         self._sync_copy()
         self._update_disk_label()
         self._update_banner()
@@ -311,6 +391,11 @@ class NewProjectScreen(QWidget):
     # ---- i18n
     def retranslate(self) -> None:
         self._title.setText(QCoreApplication.translate("NewProjectScreen", "Новый проект"))
+        self._format_label.setText(
+            QCoreApplication.translate("NewProjectScreen", _FORMAT_TEXT[self.vm.format])
+        )
+        for role, label in self._track_labels.items():
+            label.setText(track_name(self.vm.format, role))
         self._name_label.setText(QCoreApplication.translate("NewProjectScreen", "Название"))
         self.name_edit.setPlaceholderText(
             QCoreApplication.translate("NewProjectScreen", "Свадьба Айбек и Нурайым")

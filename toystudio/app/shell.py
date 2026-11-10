@@ -22,6 +22,7 @@ from toystudio.app.i18n import install_language
 from toystudio.app.platform.notify import Notifier
 from toystudio.app.platform.taskbar import TaskbarProgress
 from toystudio.app.screens.analysis import AnalysisScreen
+from toystudio.app.screens.format_picker import FormatPickerScreen
 from toystudio.app.screens.new_project import NewProjectScreen
 from toystudio.app.screens.projects import ProjectsScreen
 from toystudio.app.theme.apply import apply_theme
@@ -29,7 +30,7 @@ from toystudio.app.viewmodels.analysis_vm import AnalysisVM
 from toystudio.app.viewmodels.new_project_vm import NewProjectVM
 from toystudio.app.viewmodels.projects_vm import ProjectsVM
 from toystudio.app.widgets.top_bar import TopBar
-from toystudio.core.models import MediaKind
+from toystudio.core.models import MediaKind, ProjectFormat
 from toystudio.jobs.launch import stop_file_for
 from toystudio.jobs.manager import JobManager
 from toystudio.storage.app_store import AppStore
@@ -87,7 +88,13 @@ class Shell(QMainWindow):
         self.projects_screen = ProjectsScreen(self.projects_vm)
         self.stack.addWidget(self.projects_screen)
         self.projects_vm.open_requested.connect(self._open_project)
-        self.projects_vm.new_requested.connect(lambda files: self.show_new_project(list(files)))
+        self.format_picker = FormatPickerScreen()
+        self.stack.addWidget(self.format_picker)
+        self.format_picker.chosen.connect(
+            lambda fmt: self.show_new_project(self._picked_files, fmt=fmt)
+        )
+        self._picked_files: list[Path] = []
+        self.projects_vm.new_requested.connect(lambda files: self.show_format_picker(list(files)))
 
         self.top_bar.language_changed.connect(self._on_language)
         self.top_bar.theme_changed.connect(self._on_theme)
@@ -120,10 +127,24 @@ class Shell(QMainWindow):
         self.stack.setCurrentWidget(self.projects_screen)
         self.top_bar.set_project_mode(False)
 
-    def show_new_project(self, files: list[Path] | None = None, root: Path | None = None) -> None:
+    def show_format_picker(self, files: list[Path] | None = None) -> None:
+        """«Что монтируем?» before a new project; dropped files wait for the choice."""
+        self._drop_new_project()
+        self.root_path = None
+        self._picked_files = list(files or [])
+        self.stack.setCurrentWidget(self.format_picker)
+        self.top_bar.set_project_mode(False)
+
+    def show_new_project(
+        self,
+        files: list[Path] | None = None,
+        root: Path | None = None,
+        fmt: ProjectFormat = ProjectFormat.TOI,
+    ) -> None:
         """Screen 2 for a new project (optionally with dropped files) or an existing one."""
         self._drop_new_project()
-        vm = NewProjectVM(self.app_store, self.jobs, self.projects_dir)
+        self._picked_files = []
+        vm = NewProjectVM(self.app_store, self.jobs, self.projects_dir, fmt)
         if root is not None:
             vm.attach(root.resolve())
         screen = NewProjectScreen(vm)

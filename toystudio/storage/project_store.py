@@ -18,10 +18,12 @@ from toystudio.core.models import (
     Mark,
     MediaInfo,
     MediaKind,
+    MediaRole,
     MediaRow,
     MediaStatus,
     MomentRow,
     MomentType,
+    ProjectFormat,
     QualityInterval,
     QualityLabel,
     Reason,
@@ -69,6 +71,7 @@ class ProjectSummary:
     duration_us: int
     step: Literal["files", "analysis", "analysis_done"]
     has_copies: bool = False
+    format: ProjectFormat = ProjectFormat.TOI
 
 
 class ProjectStore:
@@ -77,7 +80,14 @@ class ProjectStore:
         self._con = con
 
     @classmethod
-    def create(cls, root: Path, name: str, kind: ToiKind, event_date: date) -> Self:
+    def create(
+        cls,
+        root: Path,
+        name: str,
+        kind: ToiKind,
+        event_date: date,
+        fmt: ProjectFormat = ProjectFormat.TOI,
+    ) -> Self:
         root.mkdir(parents=True, exist_ok=True)
         for d in CACHE_DIRS:
             (root / "cache" / d).mkdir(parents=True, exist_ok=True)
@@ -89,8 +99,8 @@ class ProjectStore:
             with con:
                 con.execute(
                     "INSERT INTO project(id, name, kind, event_date, created_at, updated_at,"
-                    " schema_version) VALUES (1, ?, ?, ?, ?, ?, ?)",
-                    (name, kind.value, event_date.isoformat(), now, now, version),
+                    " schema_version, format) VALUES (1, ?, ?, ?, ?, ?, ?, ?)",
+                    (name, kind.value, event_date.isoformat(), now, now, version, fmt.value),
                 )
         except BaseException:
             con.close()
@@ -145,7 +155,9 @@ class ProjectStore:
         try:
             if int(con.execute("PRAGMA user_version").fetchone()[0]) < current:
                 return fallback
-            row = con.execute("SELECT name, kind, event_date FROM project WHERE id=1").fetchone()
+            row = con.execute(
+                "SELECT name, kind, event_date, format FROM project WHERE id=1"
+            ).fetchone()
             if row is None:
                 return fallback
             store = cls(root, con)
@@ -162,6 +174,7 @@ class ProjectStore:
                 duration,
                 store.step(),
                 copies,
+                ProjectFormat(row[3]) if row[3] else ProjectFormat.TOI,
             )
         except (sqlite3.Error, ValueError):
             return fallback
@@ -245,7 +258,16 @@ class ProjectStore:
 
     # --- media ---
 
-    def add_media(self, path: Path, kind: MediaKind, size: int, copied: bool) -> tuple[int, bool]:
+    @property
+    def format(self) -> ProjectFormat:
+        row = self._con.execute("SELECT format FROM project WHERE id=1").fetchone()
+        return ProjectFormat(row[0]) if row is not None and row[0] else ProjectFormat.TOI
+
+    def add_media(
+        self, path: Path, role: MediaRole | MediaKind, size: int, copied: bool
+    ) -> tuple[int, bool]:
+        if isinstance(role, MediaKind):
+            role = MediaRole.default_for(role)
         resolved = path.resolve()
         for row in self._con.execute("SELECT id, path, size FROM media").fetchall():
             other = Path(row[1])
@@ -253,8 +275,9 @@ class ProjectStore:
                 return int(row[0]), False
         with self._con:
             cur = self._con.execute(
-                "INSERT INTO media(kind, path, copied, size, added_at) VALUES (?, ?, ?, ?, ?)",
-                (kind.value, str(path), int(copied), size, _now()),
+                "INSERT INTO media(kind, role, path, copied, size, added_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (role.kind.value, role.value, str(path), int(copied), size, _now()),
             )
         return int(cur.lastrowid or 0), True
 
@@ -293,7 +316,7 @@ class ProjectStore:
         sql = (
             "SELECT id, kind, path, copied, size, duration_us, width, height, rotation, fps,"
             " codec, hdr, has_audio, has_video, bit_rate, creation_time, status,"
-            " sync_offset_us, sync_confidence FROM media"
+            " sync_offset_us, sync_confidence, role FROM media"
         )
         args: tuple[str, ...] = ()
         if kind is not None:
@@ -328,9 +351,14 @@ class ProjectStore:
                     status=MediaStatus(r[16]),
                     sync_offset_us=r[17],
                     sync_confidence=r[18],
+                    role=MediaRole(r[19]) if r[19] else MediaRole.default_for(MediaKind(r[1])),
                 )
             )
         return out
+
+    def analyzable_media(self) -> list[MediaRow]:
+        """Files the analysis works on: videos of every role and speech recordings."""
+        return [m for m in self.list_media() if m.analyzable]
 
     def remove_media(self, media_id: int) -> None:
         with self._con:
@@ -593,7 +621,7 @@ class ProjectStore:
         the project in "analysis". A file with a FAILED stage counts as finished (ruling R9), so does a
         FAILED SYNC.
         """
-        all_videos = self.list_media(MediaKind.VIDEO)
+        all_videos = self.analyzable_media()
         started = (
             self._con.execute("SELECT 1 FROM stage_run WHERE media_id != 0 LIMIT 1").fetchone()
             is not None

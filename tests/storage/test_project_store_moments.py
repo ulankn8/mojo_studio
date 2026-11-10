@@ -145,7 +145,7 @@ def test_migration_from_v2_keeps_data(tmp_path):
     con.commit()
     con.close()
     s = ProjectStore.open(root)
-    assert s._con.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert s._con.execute("PRAGMA user_version").fetchone()[0] == 4
     assert [m.path for m in s.list_media()] == [Path("a.mp4")]
     assert len(s.audio_events(1)) == 1
     (m,) = s.moments(1)

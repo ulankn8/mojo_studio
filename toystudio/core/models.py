@@ -71,8 +71,68 @@ class Moment:
 
 
 class MediaKind(StrEnum):
+    """Container of a file: video, or audio only (stored as "music" for schema compatibility)."""
+
     VIDEO = "video"
     MUSIC = "music"
+
+
+class MediaRole(StrEnum):
+    """What a file is for in the edit: its track."""
+
+    PRE = "pre"  # mixed shooting without a main camera: before the restaurant, love story, ad
+    MAIN = "main"  # V1: main camera, the story follows it
+    CUTAWAY = "cutaway"  # V2: second camera, inserts over V1
+    SPEECH = "speech"  # clean speech from the sound desk or mics, synced to V1
+    MUSIC = "music"  # music library
+
+    @property
+    def kind(self) -> MediaKind:
+        return MediaKind.MUSIC if self in (MediaRole.SPEECH, MediaRole.MUSIC) else MediaKind.VIDEO
+
+    @staticmethod
+    def default_for(kind: MediaKind) -> "MediaRole":
+        """Role of a file stored before roles existed."""
+        return MediaRole.MAIN if kind is MediaKind.VIDEO else MediaRole.MUSIC
+
+
+class ProjectFormat(StrEnum):
+    """What is being edited; decides which tracks the files go to."""
+
+    WEDDING_EXPRESS = "wedding_express"
+    WEDDING_FULL = "wedding_full"
+    LOVE_STORY = "love_story"
+    PODCAST = "podcast"
+    AD = "ad"
+    TOI = (
+        "toi"  # toi, jubilee and other events: one video zone plus music (projects before formats)
+    )
+
+
+FORMAT_ROLES: dict[ProjectFormat, tuple[MediaRole, ...]] = {
+    ProjectFormat.WEDDING_EXPRESS: (MediaRole.PRE, MediaRole.MUSIC),
+    ProjectFormat.WEDDING_FULL: (
+        MediaRole.PRE,
+        MediaRole.MAIN,
+        MediaRole.CUTAWAY,
+        MediaRole.SPEECH,
+        MediaRole.MUSIC,
+    ),
+    ProjectFormat.LOVE_STORY: (MediaRole.PRE, MediaRole.MUSIC),
+    ProjectFormat.PODCAST: (MediaRole.MAIN, MediaRole.CUTAWAY, MediaRole.SPEECH, MediaRole.MUSIC),
+    ProjectFormat.AD: (MediaRole.PRE, MediaRole.MUSIC),
+    ProjectFormat.TOI: (MediaRole.MAIN, MediaRole.MUSIC),
+}
+SYNCED_ROLES = (MediaRole.MAIN, MediaRole.CUTAWAY, MediaRole.SPEECH)
+
+
+def format_toi_kind(fmt: ProjectFormat, chosen: ToiKind) -> ToiKind:
+    """Toi kind stored for a project: weddings are weddings, the toi format keeps the choice."""
+    if fmt is ProjectFormat.TOI:
+        return chosen
+    if fmt in (ProjectFormat.WEDDING_EXPRESS, ProjectFormat.WEDDING_FULL):
+        return ToiKind.WEDDING
+    return ToiKind.OTHER
 
 
 class MediaStatus(StrEnum):
@@ -162,6 +222,12 @@ class MediaRow:
     status: MediaStatus
     sync_offset_us: int | None
     sync_confidence: float | None
+    role: MediaRole
+
+    @property
+    def analyzable(self) -> bool:
+        """Videos of every role and speech recordings go through analysis; music does not."""
+        return self.kind is MediaKind.VIDEO or self.role is MediaRole.SPEECH
 
 
 @dataclass(frozen=True)

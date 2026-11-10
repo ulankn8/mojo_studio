@@ -16,7 +16,17 @@ from PySide6.QtCore import QObject, Signal
 from toystudio.app.widgets.drop_zone import FileRow, RowState
 from toystudio.core.budget import needed_bytes
 from toystudio.core.eta import DEFAULT_X_RT, over_target, profile_key, project_remaining_s
-from toystudio.core.models import US_PER_S, MediaKind, MediaRow, MediaStatus, ToiKind
+from toystudio.core.models import (
+    FORMAT_ROLES,
+    US_PER_S,
+    MediaKind,
+    MediaRole,
+    MediaRow,
+    MediaStatus,
+    ProjectFormat,
+    ToiKind,
+    format_toi_kind,
+)
 from toystudio.jobs.launch import stop_file_for, worker_argv
 from toystudio.jobs.manager import JobManager
 from toystudio.storage.app_store import AppStore
@@ -79,8 +89,15 @@ class NewProjectVM(QObject):
     date_changed = Signal(object)
     copy_changed = Signal(bool)
 
-    def __init__(self, app_store: AppStore, jobs: JobManager, projects_dir: Path) -> None:
+    def __init__(
+        self,
+        app_store: AppStore,
+        jobs: JobManager,
+        projects_dir: Path,
+        fmt: ProjectFormat = ProjectFormat.TOI,
+    ) -> None:
         super().__init__()
+        self.format = fmt
         self._app = app_store
         self._jobs = jobs
         self._projects_dir = projects_dir
@@ -97,10 +114,10 @@ class NewProjectVM(QObject):
         self._rerun = False
         self._copy_pct: dict[int, int] = {}
         self._excluded: set[int] = set()
-        self._dups: dict[MediaKind, list[FileRow]] = {k: [] for k in MediaKind}
+        self._dups: dict[MediaRole, list[FileRow]] = {r: [] for r in MediaRole}
         self._dup_n = 0
         self._media: list[MediaRow] = []
-        self._rows: dict[MediaKind, list[FileRow]] = {k: [] for k in MediaKind}
+        self._rows: dict[MediaRole, list[FileRow]] = {r: [] for r in MediaRole}
         self._disk = DiskCheck(0, 0, "", True)
         self._can_start = False
         self.banner_key: str | None = None
@@ -108,7 +125,7 @@ class NewProjectVM(QObject):
         self.corrupt_name: str | None = None
         self.warning_4k_active = False
         self.eta_4k_s = 0.0
-        self._queued: list[tuple[MediaKind, list[Path]]] = []
+        self._queued: list[tuple[MediaRole, list[Path]]] = []
         self._closed = False
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_job_end)
@@ -156,7 +173,7 @@ class NewProjectVM(QObject):
 
     def _save_details(self) -> None:
         if self._store is not None:
-            self._store.update_details(self._kind, self._date)
+            self._store.update_details(self._stored_kind, self._date)
 
     def _set_copy(self, value: bool, start: bool = True) -> bool:
         """Switch copy mode; returns True when existing rows were flipped (an import is due)."""
@@ -198,15 +215,31 @@ class NewProjectVM(QObject):
         return True
 
     @property
+    def _stored_kind(self) -> ToiKind:
+        return format_toi_kind(self.format, self._kind)
+
+    @property
+    def roles(self) -> tuple[MediaRole, ...]:
+        """Tracks shown on screen 2, in order."""
+        return FORMAT_ROLES[self.format]
+
+    def role_for(self, track: MediaRole | MediaKind) -> MediaRole:
+        """A bare kind (a folder dropped on the projects screen) goes to the first such track."""
+        if isinstance(track, MediaRole):
+            return track
+        return next((r for r in self.roles if r.kind is track), MediaRole.default_for(track))
+
+    @property
     def projects_dir(self) -> Path:
         return self._projects_dir
 
     # ---- files
-    def add_files(self, kind: MediaKind, paths: list[Path]) -> None:
+    def add_files(self, track: MediaRole | MediaKind, paths: list[Path]) -> None:
+        role = self.role_for(track)
         if self.root is not None and self._store is None:  # attached read-only: a worker runs
-            self._queued.append((kind, list(paths)))
+            self._queued.append((role, list(paths)))
             return
-        self._dups = {k: [] for k in MediaKind}
+        self._dups = {r: [] for r in MediaRole}
         files = [p for p in paths if p.is_file()]
         if not files:
             return
@@ -221,13 +254,13 @@ class NewProjectVM(QObject):
                 size = p.stat().st_size
             except OSError:
                 continue
-            _, created = store.add_media(p, kind, size, self._copy)
+            _, created = store.add_media(p, role, size, self._copy)
             if created:
                 added = True
             else:
                 self._dup_n += 1
                 row = FileRow(f"dup:{self._dup_n}", p.name, size, None, "duplicate", None)
-                self._dups[kind].append(row)
+                self._dups[role].append(row)
         self._refresh()
         if added:
             self._start_import()
@@ -248,9 +281,9 @@ class NewProjectVM(QObject):
         if self._store is None:
             return
         old = next((m for m in self._store.list_media() if m.id == media_id), None)
-        kind = old.kind if old is not None else MediaKind.VIDEO
+        role = old.role if old is not None else self.role_for(MediaKind.VIDEO)
         self.remove_file(media_id)
-        self.add_files(kind, [path])
+        self.add_files(role, [path])
 
     def exclude_bad(self) -> None:
         """«Продолжить без него»: bad files stay in the list but no longer block anything."""
@@ -260,8 +293,8 @@ class NewProjectVM(QObject):
     def first_bad_id(self) -> int | None:
         return next((m.id for m in self._bad_media()), None)
 
-    def rows(self, kind: MediaKind) -> list[FileRow]:
-        return list(self._rows[kind])
+    def rows(self, track: MediaRole | MediaKind) -> list[FileRow]:
+        return list(self._rows[self.role_for(track)])
 
     def recheck(self) -> None:
         self._refresh(force=True)
@@ -285,7 +318,7 @@ class NewProjectVM(QObject):
             return self._store
         folder = self._folder_for()
         name = self._name.strip() or folder.name
-        self._store = ProjectStore.create(folder, name, self._kind, self._date)
+        self._store = ProjectStore.create(folder, name, self._stored_kind, self._date, self.format)
         self.root = folder.resolve()  # job ids and the project list use resolved roots
         self._app.register_project(folder, name, self._status, datetime.now())
         return self._store
@@ -301,7 +334,7 @@ class NewProjectVM(QObject):
             raise RuntimeError("the view-model already has a project")
         summary = ProjectStore.peek(root)
         self.root = root
-        self._name, self._kind = summary.name, summary.kind
+        self._name, self._kind, self.format = summary.name, summary.kind, summary.format
         self._date = summary.event_date or self._date
         self._date_touched = True  # the saved date wins over the clip's creation time
         self._copy = summary.has_copies
@@ -497,11 +530,11 @@ class NewProjectVM(QObject):
     def _refresh(self, force: bool = False) -> None:
         self._media = self._read_media()
         self._update_default_date()
-        for kind in MediaKind:
-            rows = [self._row_for(m) for m in self._media if m.kind is kind] + self._dups[kind]
-            if force or rows != self._rows[kind]:
-                self._rows[kind] = rows
-                self.rows_changed.emit(kind, list(rows))
+        for role in MediaRole:
+            rows = [self._row_for(m) for m in self._media if m.role is role] + self._dups[role]
+            if force or rows != self._rows[role]:
+                self._rows[role] = rows
+                self.rows_changed.emit(role, list(rows))
         disk = self.disk_check()
         if force or disk != self._disk:
             self._disk = disk
@@ -537,7 +570,7 @@ class NewProjectVM(QObject):
             self.warning_4k_active = warn
             self.warning_4k.emit(warn)
         unchecked = any(
-            m.kind is MediaKind.VIDEO
+            m.analyzable
             and m.status is MediaStatus.OK
             and m.info is None
             and m.id not in self._excluded

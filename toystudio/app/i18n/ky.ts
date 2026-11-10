@@ -497,6 +497,105 @@
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Алмаштыруу</translation>
     </message>
+    <message>
+        <location filename="../widgets/drop_zone.py"/>
+        <source>Перетащите звук сюда</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Үндү бул жерге сүйрөңүз</translation>
+    </message>
+    <message>
+        <location filename="../widgets/drop_zone.py"/>
+        <source>Выбрать папку</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Папканы тандоо</translation>
+    </message>
+</context>
+<context>
+    <name>FormatPicker</name>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Что монтируем?</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Эмнени монтаждайбыз?</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Свадьба</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Үйлөнүү той</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Дом жениха, дорога, невеста, лав-стори, фуршет и ресторан с двух камер</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Күйөөнүн үйү, жол, колуктү, лав-стори, фуршет жана эки камера менен ресторан</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Экспресс-видео</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Экспресс-видео</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Полный фильм</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Толук фильм</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Love Story</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Love Story</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Съёмка молодожёнов на локации, клип под музыку</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Жаңы үйлөнгөндөрдү локацияда тартуу, музыкага клип</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Выбрать</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Тандоо</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Подкаст или интервью</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Подкаст же интервью</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Основная камера, вторая камера и звук с микрофонов</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Негизги камера, экинчи камера жана микрофондордун үнү</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Рекламный ролик</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Жарнамалык ролик</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Ролик до 10–20 минут из съёмки и музыки</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Тартылгандан жана музыкадан 10–20 мүнөткө чейинки ролик</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Той, юбилей и другое</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Той, юбилей жана башкалар</translation>
+    </message>
+    <message>
+        <location filename="../screens/format_picker.py"/>
+        <source>Видео события и музыка, как раньше</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Иш-чаранын видеосу жана музыка, мурдагыдай</translation>
+    </message>
 </context>
 <context>
     <name>MomentCard</name>
@@ -719,6 +818,96 @@
         <source>Начать анализ</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоону баштоо</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Вся съёмка, камеры вперемешку</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Бардык тартылгандар, камералар аралаш</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Основная камера</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Негизги камера</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Подсъёмка, вторая камера</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Кошумча тартуу, экинчи камера</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Речь: звук с пульта или микрофонов</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Сөз: пульттан же микрофондордон үн</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Библиотека музыки</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Музыка китепканасы</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>До ресторана: дом жениха, дорога, ЗАГС, невеста, лав-стори, фуршет</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Ресторанга чейин: күйөөнүн үйү, жол, ЗАГС, колуктү, лав-стори, фуршет</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Ресторан: основная камера</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Ресторан: негизги камера</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Ресторан: подсъёмка</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Ресторан: кошумча тартуу</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Ресторан: речь, звук с пульта</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Ресторан: сөз, пульттан үн</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Свадьба · экспресс-видео</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Үйлөнүү той · экспресс-видео</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Свадьба · полный фильм</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Үйлөнүү той · толук фильм</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Love Story</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Love Story</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Подкаст или интервью</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Подкаст же интервью</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Рекламный ролик</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Жарнамалык ролик</translation>
+    </message>
+    <message>
+        <location filename="../screens/new_project.py"/>
+        <source>Той, юбилей и другое</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Той, юбилей жана башкалар</translation>
     </message>
 </context>
 <context>

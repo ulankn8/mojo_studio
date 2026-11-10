@@ -18,6 +18,7 @@ from toystudio.core.models import (
     US_PER_S,
     MediaInfo,
     MediaKind,
+    MediaRole,
     MediaRow,
     MediaStatus,
     StageName,
@@ -27,7 +28,7 @@ from toystudio.engine.analysis import single_pass
 from toystudio.engine.analysis.quality import bad_intervals
 from toystudio.engine.analysis.scenes import detect_cuts
 from toystudio.engine.analysis.single_pass import FfmpegFailed, Outputs, Stopped, outputs_for
-from toystudio.engine.analysis.sync import sync_project
+from toystudio.engine.analysis.sync import sync_tracks
 from toystudio.engine.media.probe import check_integrity, probe_media
 from toystudio.engine.media.thumbs import card_thumbnail, frame_at
 from toystudio.engine.moments.group import group_ids
@@ -162,7 +163,9 @@ class _Run:
 
     def run_stage(self, row: MediaRow, stage: StageName) -> None:
         out = outputs_for(self.cache, row.id)
-        if stage is StageName.PROBE:
+        if stage in _VIDEO_ONLY and _audio_only(row):
+            self.finish(row.id, stage, StageState.SKIPPED)
+        elif stage is StageName.PROBE:
             self.probe(row)
         elif stage is StageName.PROXY:
             self.proxy(row, out)
@@ -190,13 +193,15 @@ class _Run:
                 info = None
             if info is not None:
                 self.store.set_media_info(row.id, info)
-        if info is None or not info.has_video:
+        usable = info is not None and (info.has_audio if _audio_only(row) else info.has_video)
+        if info is None or not usable:
             self.store.set_media_status(row.id, MediaStatus.CORRUPT)
             self.finish(row.id, StageName.PROBE, StageState.FAILED, error_code="corrupt")
             self.ctx.report(Event("media", {"media_id": row.id, "status": "corrupt"}))
             self.drop_eta(row.id)
             raise _SkipFile()
-        self.proxy_left_s[row.id] = (profile_key(info), info.duration_us / US_PER_S)
+        if not _audio_only(row):
+            self.proxy_left_s[row.id] = (profile_key(info), info.duration_us / US_PER_S)
         if info.has_audio and not self.is_current(row.id, StageName.SPEECH):
             self.speech_left_s[row.id] = info.duration_us / US_PER_S
         self.finish(row.id, StageName.PROBE, StageState.DONE)
@@ -204,6 +209,9 @@ class _Run:
     def proxy(self, row: MediaRow, out: Outputs) -> None:
         info = row.info
         assert info is not None  # PROBE is done before PROXY
+        if _audio_only(row):
+            self.audio_pass(row, info, out)
+            return
         if not (out.proxy.is_file() and out.frames.is_file()):  # proxy = completion marker
             total_s = info.duration_us / US_PER_S
             key = profile_key(info)
@@ -227,6 +235,24 @@ class _Run:
         self.finish(row.id, StageName.PROXY, StageState.DONE)
         self.eta(force=True)
         self.card(out.proxy)
+
+    def audio_pass(self, row: MediaRow, info: MediaInfo, out: Outputs) -> None:
+        """Speech recording: wav and envelope only (no picture, nothing to time for the ETA)."""
+        if not (out.wav.is_file() and out.envelope.is_file()):
+            total_s = info.duration_us / US_PER_S
+
+            def on_progress(done_s: float) -> None:
+                self.ctx.report(Progress(StageName.PROXY.value, done_s, total_s, str(row.id)))
+
+            try:
+                single_pass.run_audio(
+                    row.path, info, out, on_progress=on_progress, should_stop=self.ctx.should_stop
+                )
+            except FfmpegFailed:
+                self.drop_eta(row.id)
+                self.finish(row.id, StageName.PROXY, StageState.FAILED, error_code="ffmpeg")
+                raise _SkipFile() from None
+        self.finish(row.id, StageName.PROXY, StageState.DONE)
 
     def speech(self, row: MediaRow, out: Outputs) -> None:
         """Stage 2: speech regions (VAD) for the first half of the progress, events second."""
@@ -301,7 +327,7 @@ class _Run:
         except (RuntimeError, ValueError, OSError):
             pass  # a missing card picture must not fail the analysis
 
-    def sync(self, video_ids: list[int]) -> None:
+    def sync(self, media: list[MediaRow]) -> None:
         stage = StageName.SYNC
         if self.ctx.should_stop():
             self.store.set_stage(PROJECT_MEDIA_ID, stage, StageState.INTERRUPTED)
@@ -309,11 +335,22 @@ class _Run:
         self.store.set_stage(PROJECT_MEDIA_ID, stage, StageState.RUNNING)
         self.stage_event(PROJECT_MEDIA_ID, stage, StageState.RUNNING)
         try:
-            envelopes: dict[int, np.ndarray | None] = {}
-            for mid in video_ids:
-                env = outputs_for(self.cache, mid).envelope
-                envelopes[mid] = np.load(env) if env.is_file() else None
-            for r in sync_project(envelopes):
+
+            def env(mid: int) -> np.ndarray | None:
+                path = outputs_for(self.cache, mid).envelope
+                return np.load(path) if path.is_file() else None
+
+            def track(role: MediaRole) -> list[MediaRow]:
+                return sorted((m for m in media if m.role is role), key=lambda m: m.path.name)
+
+            for m in track(MediaRole.PRE):  # mixed shooting at different times: no common clock
+                self.store.set_sync(m.id, None, None)
+            found = sync_tracks(
+                {m.id: env(m.id) for m in track(MediaRole.MAIN)},
+                {m.id: env(m.id) for m in track(MediaRole.CUTAWAY)},
+                [(m.id, env(m.id)) for m in track(MediaRole.SPEECH)],  # recorder order = names
+            )
+            for r in found:
                 self.store.set_sync(r.media_id, r.offset_us, r.confidence)
         except Exception:  # noqa: BLE001 - files stay analysed; the wizard can finish
             traceback.print_exc(file=sys.stderr)
@@ -348,7 +385,15 @@ def _speeds(app: AppStore | None) -> dict[str, float]:
 
 
 def _ok_videos(store: ProjectStore) -> list[MediaRow]:
-    return [m for m in store.list_media(MediaKind.VIDEO) if m.status is MediaStatus.OK]
+    """Analysable files (videos of every track and speech recordings) that are present."""
+    return [m for m in store.analyzable_media() if m.status is MediaStatus.OK]
+
+
+_VIDEO_ONLY = (StageName.SCENES, StageName.QUALITY, StageName.MOMENTS)
+
+
+def _audio_only(row: MediaRow) -> bool:
+    return row.kind is MediaKind.MUSIC
 
 
 def run(ctx: JobContext) -> None:
@@ -363,7 +408,11 @@ def run(ctx: JobContext) -> None:
             for stage in STAGE_ORDER:
                 if store.stage(m.id, stage) is None:
                     store.set_stage(m.id, stage, StageState.PENDING, version=STAGE_VERSION[stage])
-            if m.info is not None and not r.is_current(m.id, StageName.PROXY):
+            if (
+                m.info is not None
+                and not _audio_only(m)
+                and not r.is_current(m.id, StageName.PROXY)
+            ):
                 r.proxy_left_s[m.id] = (profile_key(m.info), m.info.duration_us / US_PER_S)
             if m.info is not None and m.info.has_audio and not r.is_current(m.id, StageName.SPEECH):
                 r.speech_left_s[m.id] = m.info.duration_us / US_PER_S
@@ -375,7 +424,7 @@ def run(ctx: JobContext) -> None:
                 r.analyze_file(m.id)
             except _SkipFile:
                 continue
-        r.sync([m.id for m in _ok_videos(store)])
+        r.sync(_ok_videos(store))
     finally:
         if app is not None:
             app.close()

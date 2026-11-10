@@ -17,7 +17,6 @@ from toystudio.core.models import (
     STAGE_ORDER,
     US_PER_S,
     Mark,
-    MediaKind,
     MediaRow,
     MediaStatus,
     MomentRow,
@@ -344,7 +343,7 @@ class AnalysisVM(QObject):
             snap.runs = {(r.media_id, r.stage): r for r in store.stages()}
             snap.files = [
                 m
-                for m in store.list_media(MediaKind.VIDEO)
+                for m in store.analyzable_media()
                 if m.status is MediaStatus.OK
                 or (
                     m.status is MediaStatus.CORRUPT
@@ -352,9 +351,7 @@ class AnalysisVM(QObject):
                     and r.state is StageState.FAILED
                 )
             ]
-            snap.missing = [
-                m for m in store.list_media(MediaKind.VIDEO) if m.status is MediaStatus.MISSING
-            ]
+            snap.missing = [m for m in store.analyzable_media() if m.status is MediaStatus.MISSING]
             snap.scene_cuts = store.scene_cut_count()
             snap.speech_regions = sum(len(store.speech_regions(m.id)) for m in snap.files)
             snap.moment_counts = store.moment_counts()
