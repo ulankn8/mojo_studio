@@ -49,12 +49,17 @@ class Timeline:
     video: tuple[Segment, ...] = ()
     music: tuple[Segment, ...] = ()
     titles: tuple[Segment, ...] = ()
+    # continuous reference sound (sound desk or main camera); when present it replaces the
+    # cameras' own sound, and in every block its pieces add up to the video duration
+    speech: tuple[Segment, ...] = ()
 
     def track_segments(self, track: Track) -> tuple[Segment, ...]:
         if track is Track.VIDEO:
             return self.video
         if track is Track.MUSIC:
             return self.music
+        if track is Track.SPEECH:
+            return self.speech
         return self.titles
 
     def duration(self) -> int:

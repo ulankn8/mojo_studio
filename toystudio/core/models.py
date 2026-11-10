@@ -36,6 +36,7 @@ class Track(StrEnum):
     VIDEO = "video"
     MUSIC = "music"
     TITLE = "title"
+    SPEECH = "speech"  # continuous reference sound (sound desk) under the cuts
 
 
 class AudioMode(StrEnum):

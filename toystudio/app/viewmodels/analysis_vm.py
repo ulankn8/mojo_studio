@@ -21,6 +21,7 @@ from toystudio.core.models import (
     MediaStatus,
     MomentRow,
     MomentType,
+    ProjectFormat,
     QualityLabel,
     Reason,
     StageName,
@@ -31,6 +32,7 @@ from toystudio.engine.analysis.quality import overall_label
 from toystudio.jobs.launch import stop_file_for, worker_argv
 from toystudio.jobs.manager import JobManager
 from toystudio.jobs.protocol import Progress
+from toystudio.jobs.restaurant_draft import DraftError, DraftResult, build_draft
 from toystudio.storage.app_store import AppStore
 from toystudio.storage.project_store import ProjectStore
 
@@ -91,6 +93,9 @@ def _item(m: MomentRow) -> FeedItem:
     )
 
 
+DRAFT_FORMATS = (ProjectFormat.WEDDING_FULL, ProjectFormat.PODCAST)
+
+
 @dataclass
 class _Snapshot:
     name: str = ""
@@ -102,6 +107,7 @@ class _Snapshot:
     moment_counts: dict[MomentType, int] = field(default_factory=dict)
     labels: list[QualityLabel] = field(default_factory=list)
     step_done: bool = False
+    format: ProjectFormat = ProjectFormat.TOI
 
 
 def _plural(n: int, one: str, few: str, many: str) -> str:
@@ -155,6 +161,8 @@ class AnalysisVM(QObject):
         self.feed_version = 0  # bumped whenever the feed changes
         self.feed_epoch = 0  # bumped when the feed is replaced (not just prepended to)
         self._feed_ids: set[int] = set()
+        self.draft: DraftResult | None = None
+        self.draft_error: str | None = None  # DraftError code, or "error"
         jobs.progress.connect(self._on_progress)
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_finished)
@@ -176,6 +184,20 @@ class AnalysisVM(QObject):
     def done(self) -> bool:
         """Finished, and no file waits for its drive to come back."""
         return not self._active and self._snap.step_done and not self._snap.missing
+
+    @property
+    def can_draft(self) -> bool:
+        """A draft for Premiere: formats with a main camera (restaurant, podcast), when done."""
+        return self.done and self._snap.format in DRAFT_FORMATS
+
+    def build_draft(self) -> None:
+        try:
+            self.draft, self.draft_error = build_draft(self.root), None
+        except DraftError as e:
+            self.draft, self.draft_error = None, e.code
+        except (OSError, sqlite3.Error, ValueError):
+            self.draft, self.draft_error = None, "error"
+        self.changed.emit()
 
     @property
     def can_resume(self) -> bool:
@@ -339,7 +361,7 @@ class AnalysisVM(QObject):
         except (OSError, sqlite3.Error):
             return
         try:
-            snap = _Snapshot(name=store.name)
+            snap = _Snapshot(name=store.name, format=store.format)
             snap.runs = {(r.media_id, r.stage): r for r in store.stages()}
             snap.files = [
                 m

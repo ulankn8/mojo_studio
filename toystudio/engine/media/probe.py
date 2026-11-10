@@ -102,3 +102,13 @@ def check_integrity(path: Path, edge_s: float = 2.0) -> bool:
     if not head:
         return False
     return _decode_errors(["-sseof", f"-{edge_s:.3f}", "-i", src])
+
+
+def audio_channels(path: Path) -> int:
+    """Channels of the first audio stream; 0 when there is none or ffprobe cannot tell."""
+    proc = subprocess.run(
+        [find_tool("ffprobe"), "-v", "error", "-select_streams", "a:0",
+         "-show_entries", "stream=channels", "-of", "csv=p=0", str(path)],
+        capture_output=True, text=True, check=False, creationflags=popen_flags(),
+    )  # fmt: skip
+    return _int(proc.stdout.strip().splitlines()[0]) if proc.stdout.strip() else 0

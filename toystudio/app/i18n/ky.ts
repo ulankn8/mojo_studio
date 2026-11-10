@@ -125,6 +125,42 @@
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоо аяктады</translation>
     </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Камеры не совпали со звуком — черновик не из чего собрать.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Камералар үн менен дал келген жок — кара көчүрмөнү эч нерседен түзүүгө болбойт.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>В записи не нашлось речи и танцев — черновик пустой.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Жазууда сөз да, бий да табылган жок — кара көчүрмө бош.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Не удалось собрать черновик.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Кара көчүрмөнү түзүү мүмкүн болгон жок.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Черновик: %1, склеек %2, убрано пауз и музыки %3</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Кара көчүрмө: %1, кесилиштер %2, тыныгуулар жана музыка алынды %3</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Собрать черновик для Premiere</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Premiere үчүн кара көчүрмө түзүү</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Открыть папку</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Папканы ачуу</translation>
+    </message>
 </context>
 <context>
     <name>AnalysisStage</name>

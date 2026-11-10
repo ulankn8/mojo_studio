@@ -13,6 +13,7 @@ from toystudio.core.models import (
     MediaStatus,
     MomentRow,
     MomentType,
+    ProjectFormat,
     QualityInterval,
     QualityLabel,
     Reason,
@@ -805,3 +806,74 @@ def test_speech_row_says_no_sound_when_every_file_is_silent(qtbot, project, jobs
     vm._reload()
     vm._compute()
     assert vm.stages[1].found_text == "Найдено 0 участков речи"
+
+
+# --- draft for Premiere after the analysis ---
+
+
+def _finish(store, ids, jobs, project):
+    for mid in ids:
+        _all_done(store, mid)
+    store.set_stage(0, StageName.SYNC, StageState.DONE)
+    jobs.active.clear()
+    jobs.finished.emit(job_id(project))
+
+
+def _set_format(root, fmt):
+    import sqlite3
+
+    con = sqlite3.connect(str(root / "project.db"))
+    con.execute("UPDATE project SET format=?", (fmt.value,))
+    con.commit()
+    con.close()
+
+
+def test_draft_button_only_for_restaurant_formats_when_done(qtbot, project, jobs, app_store):
+    root, store, ids = project
+    _set_format(root, ProjectFormat.WEDDING_FULL)
+    vm = make_vm(project, jobs, app_store)
+    screen = AnalysisScreen(vm, notifier=FakeNotifier())
+    qtbot.addWidget(screen)
+    assert screen._draft_box.isHidden()  # still running
+    _finish(store, ids, jobs, project)
+    assert not screen._draft_box.isHidden()
+    assert screen.draft_button.text() == "Собрать черновик для Premiere"
+    assert screen.open_folder_button.isHidden() and screen.draft_label.text() == ""
+
+
+def test_no_draft_button_for_toi(qtbot, project, jobs, app_store):
+    _root, store, ids = project
+    vm = make_vm(project, jobs, app_store)
+    screen = AnalysisScreen(vm, notifier=FakeNotifier())
+    qtbot.addWidget(screen)
+    _finish(store, ids, jobs, project)
+    assert not screen.done_label.isHidden() and screen._draft_box.isHidden()
+
+
+def test_draft_result_and_error_texts(qtbot, project, jobs, app_store, monkeypatch, tmp_path):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.engine.edit.restaurant import DraftStats
+    from toystudio.jobs.restaurant_draft import DraftError, DraftResult
+
+    root, store, ids = project
+    _set_format(root, ProjectFormat.PODCAST)
+    vm = make_vm(project, jobs, app_store)
+    screen = AnalysisScreen(vm, notifier=FakeNotifier())
+    qtbot.addWidget(screen)
+    _finish(store, ids, jobs, project)
+
+    def fail(_root):
+        raise DraftError("no_synced_cameras")
+
+    monkeypatch.setattr(avm, "build_draft", fail)
+    screen.draft_button.click()
+    assert screen.draft_label.text().startswith("Камеры не совпали со звуком")
+    assert screen.open_folder_button.isHidden()
+    stats = DraftStats(duration_us=9_070_000_000, cuts=1480, dropped_us=2_280_000_000, blocks=12)
+    result = DraftResult(tmp_path / "export" / "x.xml", "cut", stats)
+    monkeypatch.setattr(avm, "build_draft", lambda _root: result)
+    screen.draft_button.click()
+    assert (
+        screen.draft_label.text() == "Черновик: 02:31:10, склеек 1480, убрано пауз и музыки 38:00"
+    )
+    assert not screen.open_folder_button.isHidden()

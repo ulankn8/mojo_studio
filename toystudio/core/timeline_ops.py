@@ -12,6 +12,8 @@ def _with_track(t: Timeline, track: Track, segs: tuple[Segment, ...]) -> Timelin
         return replace(t, video=segs)
     if track is Track.MUSIC:
         return replace(t, music=segs)
+    if track is Track.SPEECH:
+        return replace(t, speech=segs)
     return replace(t, titles=segs)
 
 

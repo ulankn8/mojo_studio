@@ -6,8 +6,8 @@ analyses alive and drives the project card, the taskbar and the finish notificat
 
 from __future__ import annotations
 
-from PySide6.QtCore import QCoreApplication, QEvent, Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QT_TRANSLATE_NOOP, QCoreApplication, QEvent, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -29,8 +29,18 @@ from toystudio.app.widgets.banner import Banner
 from toystudio.app.widgets.empty_state import EmptyState
 from toystudio.app.widgets.icons import icon
 from toystudio.app.widgets.moment_card import PREVIEW_H, PREVIEW_W, MomentCard
+from toystudio.core.format import format_timecode
 
 FEED_COALESCE_MS = 200
+_DRAFT_ERRORS = {
+    "no_synced_cameras": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Камеры не совпали со звуком — черновик не из чего собрать."
+    ),
+    "nothing_to_keep": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "В записи не нашлось речи и танцев — черновик пустой."
+    ),
+    "error": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось собрать черновик."),
+}
 FEED_LIMIT = 50  # cards shown; the rest is a single «и ещё N» line
 
 
@@ -106,6 +116,19 @@ class AnalysisScreen(QWidget):
         self.done_label.setProperty("tone", "done")
         left.addWidget(self.saved_label)
         left.addWidget(self.done_label)
+        draft_row = QHBoxLayout()  # restaurant / podcast: an edit to finish in Premiere
+        self.draft_button = QPushButton()
+        set_variant(self.draft_button, "variant", "primary")
+        self.draft_label = QLabel()
+        self.draft_label.setProperty("role", "body")
+        self.draft_label.setWordWrap(True)
+        self.open_folder_button = QPushButton()
+        draft_row.addWidget(self.draft_button)
+        draft_row.addWidget(self.draft_label, 1)
+        draft_row.addWidget(self.open_folder_button)
+        self._draft_box = QWidget()
+        self._draft_box.setLayout(draft_row)
+        left.addWidget(self._draft_box)
         left.addStretch(1)
         columns.addLayout(left, 60)
 
@@ -150,6 +173,8 @@ class AnalysisScreen(QWidget):
         root.addLayout(bottom)
 
         self.stop_button.clicked.connect(vm.stop)
+        self.draft_button.clicked.connect(vm.build_draft)
+        self.open_folder_button.clicked.connect(self._open_draft_folder)
         self.resume_button.clicked.connect(vm.resume)
         self.retry_button.clicked.connect(vm.resume)
         self.missing_retry_button.clicked.connect(vm.resume)
@@ -191,6 +216,10 @@ class AnalysisScreen(QWidget):
         self.resume_button.setVisible(resume)
         self.saved_label.setVisible(resume)
         self.done_label.setVisible(vm.done and not vm.all_failed)
+        self._draft_box.setVisible(vm.can_draft)
+        self.draft_label.setText(self.draft_text())
+        set_variant(self.draft_label, "tone", "error" if vm.draft_error else "done")
+        self.open_folder_button.setVisible(vm.draft is not None)
         self._offline_note.setVisible(running)
         failed = [] if running else vm.failed_files
         self._failed_box.setVisible(bool(failed) and not vm.all_failed)
@@ -344,8 +373,39 @@ class AnalysisScreen(QWidget):
         self._render()
 
     # ---- i18n
+    def draft_text(self) -> str:
+        vm = self.vm
+        if vm.draft is not None:
+            st = vm.draft.stats
+            return (
+                QCoreApplication.translate(
+                    "AnalysisScreen", "Черновик: %1, склеек %2, убрано пауз и музыки %3"
+                )
+                .replace("%1", format_timecode(st.duration_us))
+                .replace("%2", str(st.cuts))
+                .replace("%3", format_timecode(st.dropped_us))
+            )
+        if vm.draft_error is None:
+            return ""
+        return QCoreApplication.translate("AnalysisScreen", _DRAFT_ERRORS.get(vm.draft_error,
+                                          _DRAFT_ERRORS["error"]))  # fmt: skip
+
+    def _open_draft_folder(self) -> None:
+        if self.vm.draft is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.vm.draft.xml_path.parent)))
+
     def retranslate(self) -> None:
         self.vm.retranslate()
+        text = QCoreApplication.translate("AnalysisScreen", "Собрать черновик для Premiere")
+        self.draft_button.setText(text)
+        # the theme's padding is not in the size hint: keep the whole label visible
+        self.draft_button.setMinimumWidth(
+            self.draft_button.fontMetrics().horizontalAdvance(text) + 56
+        )
+        self.open_folder_button.setText(
+            QCoreApplication.translate("AnalysisScreen", "Открыть папку")
+        )
+        self.draft_label.setText(self.draft_text())
         self._offline_note.setText(
             QCoreApplication.translate(
                 "AnalysisScreen", "Анализ идёт на этом компьютере, интернет не нужен"

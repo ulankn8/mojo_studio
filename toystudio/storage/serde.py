@@ -55,6 +55,7 @@ def timeline_to_json(t: Timeline) -> str:
         "video": [_seg_to_obj(s) for s in t.video],
         "music": [_seg_to_obj(s) for s in t.music],
         "titles": [_seg_to_obj(s) for s in t.titles],
+        "speech": [_seg_to_obj(s) for s in t.speech],
     }
     return json.dumps(obj, ensure_ascii=False)
 
@@ -67,4 +68,5 @@ def timeline_from_json(s: str) -> Timeline:
         video=tuple(_seg_from_obj(o) for o in obj["video"]),
         music=tuple(_seg_from_obj(o) for o in obj["music"]),
         titles=tuple(_seg_from_obj(o) for o in obj["titles"]),
+        speech=tuple(_seg_from_obj(o) for o in obj.get("speech", [])),  # absent before 0.1.2
     )
