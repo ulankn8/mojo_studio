@@ -29,6 +29,7 @@ from toystudio.core.models import (
     StageState,
 )
 from toystudio.engine.analysis.quality import overall_label
+from toystudio.jobs.day_draft import build_day_draft
 from toystudio.jobs.launch import stop_file_for, worker_argv
 from toystudio.jobs.manager import JobManager
 from toystudio.jobs.protocol import Progress
@@ -93,7 +94,14 @@ def _item(m: MomentRow) -> FeedItem:
     )
 
 
-DRAFT_FORMATS = (ProjectFormat.WEDDING_FULL, ProjectFormat.PODCAST)
+DraftKind = Literal["restaurant", "film", "express", "sde"]
+# drafts each format offers after the analysis, in button order
+DRAFT_KINDS: dict[ProjectFormat, tuple[DraftKind, ...]] = {
+    ProjectFormat.WEDDING_FULL: ("film", "restaurant"),
+    ProjectFormat.WEDDING_EXPRESS: ("express",),
+    ProjectFormat.LOVE_STORY: ("sde",),
+    ProjectFormat.PODCAST: ("restaurant",),
+}
 
 
 @dataclass
@@ -163,6 +171,7 @@ class AnalysisVM(QObject):
         self._feed_ids: set[int] = set()
         self.draft: DraftResult | None = None
         self.draft_error: str | None = None  # DraftError code, or "error"
+        self.draft_kind: DraftKind = "restaurant"
         jobs.progress.connect(self._on_progress)
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_finished)
@@ -186,13 +195,27 @@ class AnalysisVM(QObject):
         return not self._active and self._snap.step_done and not self._snap.missing
 
     @property
-    def can_draft(self) -> bool:
-        """A draft for Premiere: formats with a main camera (restaurant, podcast), when done."""
-        return self.done and self._snap.format in DRAFT_FORMATS
+    def format(self) -> ProjectFormat:
+        return self._snap.format
 
-    def build_draft(self) -> None:
+    @property
+    def draft_kinds(self) -> tuple[DraftKind, ...]:
+        """Drafts for Premiere this project offers, once the analysis is done."""
+        return DRAFT_KINDS.get(self._snap.format, ()) if self.done else ()
+
+    @property
+    def can_draft(self) -> bool:
+        return bool(self.draft_kinds)
+
+    def build_draft(self, kind: DraftKind = "restaurant", *, skip_clocks: bool = False) -> None:
+        """Build a draft; error "clocks" means the screen has to match camera clocks first."""
+        self.draft_kind = kind
         try:
-            self.draft, self.draft_error = build_draft(self.root), None
+            if kind == "restaurant":
+                result = build_draft(self.root)
+            else:
+                result = build_day_draft(self.root, kind, skip_clocks=skip_clocks)
+            self.draft, self.draft_error = result, None
         except DraftError as e:
             self.draft, self.draft_error = None, e.code
         except (OSError, sqlite3.Error, ValueError):

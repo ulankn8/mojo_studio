@@ -6,6 +6,7 @@ Takes a fraction of a second, so the GUI calls it directly after the analysis is
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,7 @@ _INVALID = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 class DraftError(Exception):
-    """`code`: no_synced_cameras | nothing_to_keep."""
+    """`code`: no_synced_cameras | nothing_to_keep | clocks."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -33,6 +34,31 @@ class DraftResult:
     xml_path: Path
     cut_id: str
     stats: DraftStats
+
+
+def file_refs(media: list[MediaRow], used: set[int]) -> dict[int, FileRef]:
+    """Files of an export; audio channels are probed in parallel (one ffprobe per file)."""
+    rows = [m for m in media if m.id in used and m.info is not None]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        chans = list(pool.map(lambda m: audio_channels(m.path) if m.info.has_audio else 0, rows))
+    return {
+        m.id: FileRef(
+            str(m.path),
+            m.info.duration_us,
+            m.info.fps,
+            m.info.width,
+            m.info.height,
+            m.info.has_video,
+            ch,
+        )
+        for m, ch in zip(rows, chans, strict=True)
+        if m.info is not None
+    }
+
+
+def export_path(root: Path, store: ProjectStore, suffix: str) -> tuple[Path, str]:
+    name = _INVALID.sub("", store.name).strip() or "Проект"
+    return root / EXPORT_DIR / f"{name} · {suffix}.xml", f"{name} · {suffix}"
 
 
 def _synced(media: list[MediaRow], role: MediaRole) -> list[MediaRow]:
@@ -70,26 +96,12 @@ def build_draft(root: Path) -> DraftResult:
             raise DraftError("nothing_to_keep")
         cut_id = store.create_cut(CUT_TITLE, "16:9", draft.stats.duration_us)
         store.save_timeline(cut_id, draft.timeline)
-        used = {c.media_id for c in clips} | {r.media_id for r in refs}
-        files = {
-            m.id: FileRef(
-                str(m.path),
-                m.info.duration_us,
-                m.info.fps,
-                m.info.width,
-                m.info.height,
-                m.info.has_video,
-                audio_channels(m.path) if m.info.has_audio else 0,
-            )
-            for m in media
-            if m.id in used and m.info is not None
-        }
+        files = file_refs(media, {c.media_id for c in clips} | {r.media_id for r in refs})
         lead = (_synced(media, MediaRole.MAIN) or cams)[0].info
         assert lead is not None
         suffix = "ресторан" if store.format is ProjectFormat.WEDDING_FULL else "черновик"
-        name = _INVALID.sub("", store.name).strip() or "Проект"
-        xml = root / EXPORT_DIR / f"{name} · {suffix}.xml"
-        write_sequence(xml, f"{name} · {suffix}", layered(draft, clips), files,
+        xml, title = export_path(root, store, suffix)
+        write_sequence(xml, title, layered(draft, clips), files,
                        lead.fps, lead.width, lead.height)  # fmt: skip
         return DraftResult(xml, cut_id, draft.stats)
     finally:

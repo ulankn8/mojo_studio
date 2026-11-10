@@ -11,6 +11,7 @@ from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -23,21 +24,33 @@ from PySide6.QtWidgets import (
 from toystudio.app.i18n import current_language
 from toystudio.app.platform.notify import Notifier
 from toystudio.app.theme.apply import set_variant, token
-from toystudio.app.viewmodels.analysis_vm import AnalysisVM, FeedItem
+from toystudio.app.viewmodels.analysis_vm import AnalysisVM, DraftKind, FeedItem
 from toystudio.app.widgets.analysis_stage import AnalysisStage
 from toystudio.app.widgets.banner import Banner
+from toystudio.app.widgets.clock_dialog import SKIPPED, ClockDialog
 from toystudio.app.widgets.empty_state import EmptyState
 from toystudio.app.widgets.icons import icon
 from toystudio.app.widgets.moment_card import PREVIEW_H, PREVIEW_W, MomentCard
 from toystudio.core.format import format_timecode
+from toystudio.core.models import ProjectFormat
 
 FEED_COALESCE_MS = 200
+_DRAFT_LABELS = {
+    "film": QT_TRANSLATE_NOOP("AnalysisScreen", "Черновик до ресторана"),
+    "restaurant": QT_TRANSLATE_NOOP("AnalysisScreen", "Черновик ресторана"),
+    "premiere": QT_TRANSLATE_NOOP("AnalysisScreen", "Собрать черновик для Premiere"),
+    "express": QT_TRANSLATE_NOOP("AnalysisScreen", "Собрать экспресс-видео"),
+    "sde": QT_TRANSLATE_NOOP("AnalysisScreen", "Собрать клип Love Story"),
+}
 _DRAFT_ERRORS = {
     "no_synced_cameras": QT_TRANSLATE_NOOP(
         "AnalysisScreen", "Камеры не совпали со звуком — черновик не из чего собрать."
     ),
     "nothing_to_keep": QT_TRANSLATE_NOOP(
         "AnalysisScreen", "В записи не нашлось речи и танцев — черновик пустой."
+    ),
+    "clocks": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Часы камер не сверены — сверьте их, чтобы собрать черновик."
     ),
     "error": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось собрать черновик."),
 }
@@ -116,14 +129,19 @@ class AnalysisScreen(QWidget):
         self.done_label.setProperty("tone", "done")
         left.addWidget(self.saved_label)
         left.addWidget(self.done_label)
-        draft_row = QHBoxLayout()  # restaurant / podcast: an edit to finish in Premiere
-        self.draft_button = QPushButton()
-        set_variant(self.draft_button, "variant", "primary")
+        draft_row = QHBoxLayout()  # drafts to finish in Premiere, by format
+        self.draft_buttons: dict[DraftKind, QPushButton] = {}
+        kinds: tuple[DraftKind, ...] = ("film", "restaurant", "express", "sde")
+        for kind in kinds:
+            b = QPushButton()
+            set_variant(b, "variant", "primary")
+            b.clicked.connect(lambda _=False, k=kind: self._build(k))
+            self.draft_buttons[kind] = b
+            draft_row.addWidget(b)
         self.draft_label = QLabel()
         self.draft_label.setProperty("role", "body")
         self.draft_label.setWordWrap(True)
         self.open_folder_button = QPushButton()
-        draft_row.addWidget(self.draft_button)
         draft_row.addWidget(self.draft_label, 1)
         draft_row.addWidget(self.open_folder_button)
         self._draft_box = QWidget()
@@ -173,7 +191,6 @@ class AnalysisScreen(QWidget):
         root.addLayout(bottom)
 
         self.stop_button.clicked.connect(vm.stop)
-        self.draft_button.clicked.connect(vm.build_draft)
         self.open_folder_button.clicked.connect(self._open_draft_folder)
         self.resume_button.clicked.connect(vm.resume)
         self.retry_button.clicked.connect(vm.resume)
@@ -217,6 +234,8 @@ class AnalysisScreen(QWidget):
         self.saved_label.setVisible(resume)
         self.done_label.setVisible(vm.done and not vm.all_failed)
         self._draft_box.setVisible(vm.can_draft)
+        for kind, b in self.draft_buttons.items():
+            b.setVisible(kind in vm.draft_kinds)
         self.draft_label.setText(self.draft_text())
         set_variant(self.draft_label, "tone", "error" if vm.draft_error else "done")
         self.open_folder_button.setVisible(vm.draft is not None)
@@ -390,18 +409,32 @@ class AnalysisScreen(QWidget):
         return QCoreApplication.translate("AnalysisScreen", _DRAFT_ERRORS.get(vm.draft_error,
                                           _DRAFT_ERRORS["error"]))  # fmt: skip
 
+    def _build(self, kind: DraftKind) -> None:
+        """Build a draft; when camera clocks disagree, match them first (or skip) and retry."""
+        self.vm.build_draft(kind)
+        if self.vm.draft_error != "clocks":
+            return
+        dialog = ClockDialog(self.vm.root, self)
+        result = dialog.exec() if dialog.result() == 0 else dialog.result()
+        if result == QDialog.DialogCode.Accepted:
+            self.vm.build_draft(kind)
+        elif result == SKIPPED:
+            self.vm.build_draft(kind, skip_clocks=True)
+
     def _open_draft_folder(self) -> None:
         if self.vm.draft is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.vm.draft.xml_path.parent)))
 
     def retranslate(self) -> None:
         self.vm.retranslate()
-        text = QCoreApplication.translate("AnalysisScreen", "Собрать черновик для Premiere")
-        self.draft_button.setText(text)
-        # the theme's padding is not in the size hint: keep the whole label visible
-        self.draft_button.setMinimumWidth(
-            self.draft_button.fontMetrics().horizontalAdvance(text) + 56
-        )
+        for kind, b in self.draft_buttons.items():
+            source = _DRAFT_LABELS[kind]
+            if kind == "restaurant" and self.vm.format is not ProjectFormat.WEDDING_FULL:
+                source = _DRAFT_LABELS["premiere"]
+            text = QCoreApplication.translate("AnalysisScreen", source)
+            b.setText(text)
+            # the theme's padding is not in the size hint: keep the whole label visible
+            b.setMinimumWidth(b.fontMetrics().horizontalAdvance(text) + 56)
         self.open_folder_button.setText(
             QCoreApplication.translate("AnalysisScreen", "Открыть папку")
         )

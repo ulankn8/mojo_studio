@@ -275,9 +275,17 @@ class ProjectStore:
                 return int(row[0]), False
         with self._con:
             cur = self._con.execute(
-                "INSERT INTO media(kind, role, path, copied, size, added_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (role.kind.value, role.value, str(path), int(copied), size, _now()),
+                "INSERT INTO media(kind, role, path, copied, size, added_at, camera_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    role.kind.value,
+                    role.value,
+                    str(path),
+                    int(copied),
+                    size,
+                    _now(),
+                    str(path.parent),
+                ),
             )
         return int(cur.lastrowid or 0), True
 
@@ -316,7 +324,7 @@ class ProjectStore:
         sql = (
             "SELECT id, kind, path, copied, size, duration_us, width, height, rotation, fps,"
             " codec, hdr, has_audio, has_video, bit_rate, creation_time, status,"
-            " sync_offset_us, sync_confidence, role FROM media"
+            " sync_offset_us, sync_confidence, role, camera_id FROM media"
         )
         args: tuple[str, ...] = ()
         if kind is not None:
@@ -352,9 +360,23 @@ class ProjectStore:
                     sync_offset_us=r[17],
                     sync_confidence=r[18],
                     role=MediaRole(r[19]) if r[19] else MediaRole.default_for(MediaKind(r[1])),
+                    camera=r[20] or str(Path(r[2]).parent),
                 )
             )
         return out
+
+    def camera_clock(self) -> dict[str, int]:
+        """Clock corrections in us per camera, set by matching one pair of clips."""
+        rows = self._con.execute("SELECT camera_id, offset_us FROM camera_clock").fetchall()
+        return {str(r[0]): int(r[1]) for r in rows}
+
+    def set_camera_clock(self, camera: str, offset_us: int) -> None:
+        with self._con:
+            self._con.execute(
+                "INSERT INTO camera_clock(camera_id, offset_us) VALUES (?, ?)"
+                " ON CONFLICT(camera_id) DO UPDATE SET offset_us=excluded.offset_us",
+                (camera, offset_us),
+            )
 
     def analyzable_media(self) -> list[MediaRow]:
         """Files the analysis works on: videos of every role and speech recordings."""

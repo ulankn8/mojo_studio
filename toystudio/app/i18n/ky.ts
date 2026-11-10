@@ -161,6 +161,36 @@
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Папканы ачуу</translation>
     </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Черновик до ресторана</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Ресторанга чейинки кара көчүрмө</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Черновик ресторана</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Ресторандын кара көчүрмөсү</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Собрать экспресс-видео</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Экспресс-видео түзүү</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Собрать клип Love Story</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Love Story клибин түзүү</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py"/>
+        <source>Часы камер не сверены — сверьте их, чтобы собрать черновик.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Камералардын сааттары салыштырылган жок — кара көчүрмө түзүү үчүн аларды салыштырыңыз.</translation>
+    </message>
 </context>
 <context>
     <name>AnalysisStage</name>
@@ -445,6 +475,51 @@
         <source>Подробнее для поддержки</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Колдоо кызматы үчүн кеңири маалымат</translation>
+    </message>
+</context>
+<context>
+    <name>ClockDialog</name>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Сверить часы камер</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Камералардын сааттарын салыштыруу</translation>
+    </message>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Часы камеры «%1» не совпадают с остальными</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">«%1» камерасынын сааты башкалар менен дал келбейт</translation>
+    </message>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Выберите по одному клипу, снятому в одно время — например, кортеж или выход невесты. По этой паре программа поправит время всех клипов камеры.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Бир убакта тартылган бирден клип тандаңыз — мисалы, кортеж же колуктунун чыгышы. Бул жуп боюнча программа камеранын бардык клиптеринин убактысын оңдойт.</translation>
+    </message>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Камера «%1»</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">«%1» камерасы</translation>
+    </message>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Камера «%1» — по ней сверяем</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">«%1» камерасы — ага карап салыштырабыз</translation>
+    </message>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Пропустить</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Өткөрүп жиберүү</translation>
+    </message>
+    <message>
+        <location filename="../widgets/clock_dialog.py"/>
+        <source>Сохранить</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Сактоо</translation>
     </message>
 </context>
 <context>

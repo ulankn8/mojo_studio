@@ -66,7 +66,7 @@ def test_user_version_and_wal(tmp_path):
     s = new_store(tmp_path)
     s.close()
     con = sqlite3.connect(str(s.root / "project.db"))
-    assert con.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert con.execute("PRAGMA user_version").fetchone()[0] == 5
     assert con.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {
@@ -97,12 +97,12 @@ def test_backup_only_when_migrating(tmp_path, monkeypatch):
 
     real = db._migrations
     monkeypatch.setattr(
-        db, "_migrations", lambda pkg: [*real(pkg), (5, "CREATE TABLE extra (x INTEGER);")]
+        db, "_migrations", lambda pkg: [*real(pkg), (6, "CREATE TABLE extra (x INTEGER);")]
     )
     ProjectStore.open(s.root).close()
     assert (s.root / "project.db.bak").exists()
     con = sqlite3.connect(str(s.root / "project.db"))
-    assert con.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert con.execute("PRAGMA user_version").fetchone()[0] == 6
     con.close()
 
 
@@ -158,7 +158,7 @@ def test_backup_is_atomic_and_leaves_no_tmp(tmp_path, monkeypatch):
     from toystudio.storage import db
 
     real = db._migrations
-    monkeypatch.setattr(db, "_migrations", lambda pkg: [*real(pkg), (5, "SELECT 1;")])
+    monkeypatch.setattr(db, "_migrations", lambda pkg: [*real(pkg), (6, "SELECT 1;")])
     ProjectStore.open(s.root).close()
     assert not (s.root / "project.db.bak.tmp").exists()
     bak = sqlite3.connect(str(s.root / "project.db.bak"))

@@ -224,6 +224,7 @@ class MediaRow:
     sync_offset_us: int | None
     sync_confidence: float | None
     role: MediaRole
+    camera: str = ""  # the camera that shot it: the file's folder (дрон/, стаб/, штатив/)
 
     @property
     def analyzable(self) -> bool:

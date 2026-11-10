@@ -118,13 +118,16 @@ def sequence_xml(
         for it in items:
             if it.track == name_:
                 clipitem(track, it, "video")
-    sound = [i for i in items if i.track == "A"]
-    channels = max((min(files[i.media_id].audio_channels, 2) for i in sound), default=1)
-    for ch in range(1, max(channels, 1) + 1):  # stereo: left on A1, right on A2
-        track = ET.SubElement(audio, "track")
-        for it in sound:
-            if files[it.media_id].audio_channels >= ch:
-                clipitem(track, it, "audio", ch)
+    for group in ("A", "M"):  # live / reference sound, then music on its own tracks
+        sound = [i for i in items if i.track == group]
+        if not sound and group == "M":
+            continue
+        channels = max((min(files[i.media_id].audio_channels, 2) for i in sound), default=1)
+        for ch in range(1, max(channels, 1) + 1):  # stereo: left, then right
+            track = ET.SubElement(audio, "track")
+            for it in sound:
+                if files[it.media_id].audio_channels >= ch:
+                    clipitem(track, it, "audio", ch)
     ET.indent(root)
     body = ET.tostring(root, encoding="unicode")
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n' + body + "\n"

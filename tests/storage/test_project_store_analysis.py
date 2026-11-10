@@ -101,7 +101,7 @@ def test_migration_from_v1_keeps_data(tmp_path):
     con.commit()
     con.close()
     s = ProjectStore.open(root)
-    assert s._con.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert s._con.execute("PRAGMA user_version").fetchone()[0] == 5
     assert [m.path for m in s.list_media()] == [Path("a.mp4")]
     run = s.stage(1, StageName.PROBE)
     assert run.state is StageState.DONE and run.progress == 1.0

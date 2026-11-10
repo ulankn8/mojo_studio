@@ -837,7 +837,10 @@ def test_draft_button_only_for_restaurant_formats_when_done(qtbot, project, jobs
     assert screen._draft_box.isHidden()  # still running
     _finish(store, ids, jobs, project)
     assert not screen._draft_box.isHidden()
-    assert screen.draft_button.text() == "Собрать черновик для Premiere"
+    visible = [k for k, b in screen.draft_buttons.items() if not b.isHidden()]
+    assert visible == ["film", "restaurant"]
+    assert screen.draft_buttons["film"].text() == "Черновик до ресторана"
+    assert screen.draft_buttons["restaurant"].text() == "Черновик ресторана"
     assert screen.open_folder_button.isHidden() and screen.draft_label.text() == ""
 
 
@@ -866,14 +869,68 @@ def test_draft_result_and_error_texts(qtbot, project, jobs, app_store, monkeypat
         raise DraftError("no_synced_cameras")
 
     monkeypatch.setattr(avm, "build_draft", fail)
-    screen.draft_button.click()
+    screen.draft_buttons["restaurant"].click()
     assert screen.draft_label.text().startswith("Камеры не совпали со звуком")
     assert screen.open_folder_button.isHidden()
     stats = DraftStats(duration_us=9_070_000_000, cuts=1480, dropped_us=2_280_000_000, blocks=12)
     result = DraftResult(tmp_path / "export" / "x.xml", "cut", stats)
     monkeypatch.setattr(avm, "build_draft", lambda _root: result)
-    screen.draft_button.click()
+    screen.draft_buttons["restaurant"].click()
     assert (
         screen.draft_label.text() == "Черновик: 02:31:10, склеек 1480, убрано пауз и музыки 38:00"
     )
     assert not screen.open_folder_button.isHidden()
+
+
+def test_draft_buttons_by_format(qtbot, project, jobs, app_store):
+    root, store, ids = project
+    for fmt, kinds, text in (
+        (ProjectFormat.WEDDING_EXPRESS, ["express"], "Собрать экспресс-видео"),
+        (ProjectFormat.LOVE_STORY, ["sde"], "Собрать клип Love Story"),
+        (ProjectFormat.PODCAST, ["restaurant"], "Собрать черновик для Premiere"),
+    ):
+        _set_format(root, fmt)
+        vm = make_vm(project, jobs, app_store, running=False)
+        screen = AnalysisScreen(vm, notifier=FakeNotifier())
+        qtbot.addWidget(screen)
+        _finish(store, ids, jobs, project)
+        vm._reload()
+        vm._compute()
+        screen.retranslate()
+        screen._render()
+        visible = [k for k, b in screen.draft_buttons.items() if not b.isHidden()]
+        assert visible == kinds and screen.draft_buttons[kinds[0]].text() == text
+
+
+def test_wrong_clocks_open_the_dialog_then_retry(qtbot, project, jobs, app_store, monkeypatch):
+    from toystudio.app.screens import analysis as screen_mod
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.jobs.restaurant_draft import DraftError
+
+    root, store, ids = project
+    _set_format(root, ProjectFormat.WEDDING_FULL)
+    vm = make_vm(project, jobs, app_store)
+    screen = AnalysisScreen(vm, notifier=FakeNotifier())
+    qtbot.addWidget(screen)
+    _finish(store, ids, jobs, project)
+    calls = []
+
+    def fake_day(_root, kind, *, skip_clocks=False):
+        calls.append((kind, skip_clocks))
+        raise DraftError("clocks" if not skip_clocks else "nothing_to_keep")
+
+    class FakeDialog:
+        def __init__(self, *_a):
+            pass
+
+        def result(self):
+            return 0
+
+        def exec(self):
+            return screen_mod.SKIPPED
+
+    monkeypatch.setattr(avm, "build_day_draft", fake_day)
+    monkeypatch.setattr(screen_mod, "ClockDialog", FakeDialog)
+    screen.draft_buttons["film"].click()
+    assert calls == [("film", False), ("film", True)]  # asked, the user skipped, built anyway
+    assert screen.draft_label.text().startswith("В записи не нашлось")

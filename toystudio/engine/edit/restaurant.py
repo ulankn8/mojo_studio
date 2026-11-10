@@ -342,7 +342,7 @@ def build(
 class Item:
     """A clip on a track of an NLE sequence; all times in microseconds."""
 
-    track: Literal["V1", "V2", "A"]
+    track: Literal["V1", "V2", "A", "M"]  # A: live or reference sound, M: music
     media_id: int
     src_in: int
     src_out: int
