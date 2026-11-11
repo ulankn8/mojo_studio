@@ -158,3 +158,15 @@ def test_plan_in_fractions_is_read_as_percent():
     b = build_from_plan(percent, _clips(), _track(), 88 * S)
     assert [s.src_in for s in a.shots] == [s.src_in for s in b.shots]
     assert a.shots[0].src_in == round(0.3 * 8 * S)
+
+
+def test_take_heads_and_tails_are_trimmed():
+    from toystudio.engine.edit.day import HEAD_US, TAIL_US
+
+    early = build_from_plan(_plan(shot(1, 2, pct=5.0)), _clips(), _track(), 88 * S)
+    assert early.shots[0].src_in >= HEAD_US  # not the second the couple gets into the pose
+    late = build_from_plan(_plan(shot(2, 2, pct=100.0)), _clips(), _track(), 88 * S)
+    assert late.shots[0].src_out <= 8 * S - TAIL_US  # nor the moment the pose breaks
+    short = build_from_plan(_plan(shot(3, 2, pct=0.0)), _clips(seconds=1.5), _track(), 88 * S)
+    s = short.shots[0]  # a 1.5 s take: no room to trim both, the window sits inside it
+    assert 0 < s.src_in and s.src_out < 1.5 * S

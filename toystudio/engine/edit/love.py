@@ -18,6 +18,7 @@ from toystudio.engine.edit.day import (
     FALLBACK_BEAT_US,
     JUMP_MAX,
     SLOW,
+    TAIL_US,
     DayClip,
     DayDraft,
     MusicTrack,
@@ -131,7 +132,7 @@ def build_from_plan(
     if shots and total < target_us:  # a short plan: let the last shot run to the target
         last = shots[-1]
         c = by_id[last.media_id]
-        grow = min(round((target_us - total) * last.speed), c.duration - last.src_out)
+        grow = min(round((target_us - total) * last.speed), c.duration - TAIL_US - last.src_out)
         if grow > 0:
             shots[-1] = Shot(last.media_id, last.src_in, last.src_out + grow, False, last.reason,
                              0, last.speed, last.part)  # fmt: skip

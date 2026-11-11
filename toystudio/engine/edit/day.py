@@ -41,6 +41,8 @@ DRONE_ENTRY_US = 3_800_000  # rule 9
 STAB_ENTRY = 0.39
 LOVE_MIN_CLIPS = 20
 LOVE_MAX_MEDIAN_US = 12 * S
+HEAD_US = 1_000_000  # a take's first second: the couple settles into the pose, the camera steadies
+TAIL_US = 600_000  # its last moments: the pose breaks, the operator stops
 BAD_MAX = 0.05  # of a shot: a second of shake in a 2 s shot is what a viewer sees
 SLOW = 0.5  # slow motion: 50 fps footage on a 25 fps timeline, every frame shown
 SLOW_MIN_FPS = 47.0  # 50 / 59.94 / 100 fps; slower footage stays at real speed
@@ -164,16 +166,27 @@ def _bad_share(c: DayClip, a: int, b: int) -> float:
 def _good_start(c: DayClip, at: int, length: int) -> int | None:
     """`at` when its window is clean, else the nearest clean start: just after a bad stretch,
     just before one, or further on in steps - later in the clip first (keeps the story's
-    order), then earlier. None when no window of `length` in the clip is clean."""
+    order), then earlier. A take's head (HEAD_US) and tail (TAIL_US) are left out as an editor
+    trims them; a take too short for that keeps its window in the middle. None when no window
+    of `length` in the clip is clean."""
     hi = c.duration - length
     if hi < 0:
         return None
-    at = min(max(0, at), hi)
+    lo, top = HEAD_US, hi - TAIL_US
+    if lo > top:  # too short to trim both ends: as far from them as it allows
+        lo = top = max(0, min(hi, round((c.duration - length) * HEAD_US / (HEAD_US + TAIL_US))))
+    return _clean_start(c, min(max(lo, at), top), length, lo, top) or _clean_start(
+        c, min(max(0, at), hi), length, 0, hi
+    )
+
+
+def _clean_start(c: DayClip, at: int, length: int, lo: int, hi: int) -> int | None:
+    """The clean start in [lo, hi] nearest to `at`, later ones first."""
     step = max(length // 2, 200_000)
-    starts = {at, *range(at, hi + 1, step), *range(at, -1, -step)}
+    starts = {at, *range(at, hi + 1, step), *range(at, lo - 1, -step)}
     for s, e in c.bad:
-        starts |= {min(e, hi), max(0, s - length)}
-    clean = [t for t in starts if 0 <= t <= hi and _bad_share(c, t, t + length) <= BAD_MAX]
+        starts |= {min(e, hi), max(lo, s - length)}
+    clean = [t for t in starts if lo <= t <= hi and _bad_share(c, t, t + length) <= BAD_MAX]
     return min(clean, key=lambda t: (t < at, abs(t - at))) if clean else None
 
 

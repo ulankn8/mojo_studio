@@ -17,6 +17,7 @@ from toystudio.core.models import (
     SpeechRegion,
     ToiKind,
 )
+from toystudio.engine.edit.day import TAIL_US
 from toystudio.engine.media.probe import probe_media
 from toystudio.jobs.day_draft import build_day_draft, clocks
 from toystudio.jobs.restaurant_draft import DraftError
@@ -142,8 +143,8 @@ def test_draft_from_an_ai_plan(tmp_path):
                                              for i in convoy))  # fmt: skip
     r = build_day_draft(root, "sde", ai_plan=plan)
     assert r.xml_path.name == "Свадьба · love story ИИ.xml"
-    # 10 shots x 3 beats x 0.6 s = 18 s; the last one runs on to the end of its 10 s clip
-    assert r.stats.duration_us == 18 * S + (10 * S - 4_800_000)
+    # 10 shots x 3 beats x 0.6 s = 18 s; the last one runs on to its 10 s take's tail
+    assert r.stats.duration_us == 18 * S + (10 * S - 4_800_000 - TAIL_US)
     saved = json.loads((root / "cache" / "ai" / "love_plan.json").read_text("utf-8"))
     assert saved["story"] == "Кортеж и встреча" and len(saved["shots"]) == 10
 

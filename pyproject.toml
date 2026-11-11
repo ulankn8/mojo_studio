@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "toystudio"
-version = "0.1.9"
+version = "0.1.10"
 description = "Той Студия: auto-editing of celebration videos"
 requires-python = ">=3.12"
 dependencies = [
