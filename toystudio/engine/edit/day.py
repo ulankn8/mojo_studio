@@ -575,16 +575,22 @@ def teaser(shots: list[Shot], by_id: dict[int, DayClip], beat: int) -> list[Shot
     return flashes
 
 
-def styles(shots: list[Shot] | tuple[Shot, ...]) -> tuple[tuple[int, str], ...]:
-    """A flash to white out of the teaser, and a whip into each quick pair's second shot."""
+def styles(
+    shots: list[Shot] | tuple[Shot, ...], *, frozen: bool = False
+) -> tuple[tuple[int, str], ...]:
+    """A flash to white out of the teaser, and a whip into each quick pair's second shot. A
+    frozen cut (the AI check's) has lost the pairs' mark: there two shots of one take side
+    by side in the middle are a pair (the AI's own plan never has them - see love.checked)."""
     out: list[tuple[int, str]] = []
     pos = 0
     for prev, cur in pairwise(shots):
         pos += prev.length
         if prev.part == "teaser" and cur.part != "teaser":
             out.append((pos, "white"))
-        elif cur.part == prev.part == "development" and cur.media_id == prev.media_id:
-            out.append((pos, "whip"))  # a quick pair: two moments of one take
+        elif cur.reason.code == _PACE.code or (
+            frozen and cur.part == prev.part == "development" and cur.media_id == prev.media_id
+        ):
+            out.append((pos, "whip"))
     return tuple(out)
 
 

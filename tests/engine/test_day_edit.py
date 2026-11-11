@@ -247,3 +247,10 @@ def test_music_written_to_the_cut_lines_its_loudest_part_up_with_the_climax():
     track = MusicTrack(9, 100 * S, beats, "sde", True, tuple(energy))
     (piece,) = _music_under(shots, {0: track})
     assert abs(piece.src_in - 22 * S) <= S and piece.src_out - piece.src_in == 60 * S
+
+
+def test_express_whips_only_its_quick_pairs():
+    d = _day()
+    ex = build_clip(d.clips, [track(124)], "express")
+    whips = [p for p, kind in ex.styles if kind == "whip"]
+    assert len(whips) <= 2  # takes cut into several shots in a row are not whips

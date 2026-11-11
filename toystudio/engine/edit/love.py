@@ -157,7 +157,7 @@ def build_from_plan(
     source = [by_id[i] for i in {s.media_id for s in shots}]
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), ("love",),
                     _stats(shots, source, 1), dissolves(shots), True, beat,
-                    styles(shots))  # fmt: skip
+                    styles(shots, frozen=plan.revised))  # fmt: skip
 
 
 def revised_plan(plan: AiPlan, shots: list[ReviewShot], review: AiReview) -> AiPlan:
