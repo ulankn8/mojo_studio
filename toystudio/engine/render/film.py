@@ -3,8 +3,9 @@
 Each shot of V1 is cut from its file, slowed (setpts), coloured with its LUT, framed to the
 output size at a constant frame rate, and encoded on its own (a few side by side); shots joined by hard cuts are
 concatenated, dissolves are `xfade` between those runs, the film fades in from and out to
-black, and the music (and any live sound) is laid under it with a fade at the end. Shots
-that dissolve are cut longer by half a dissolve on each side, from the source handles.
+black, and the music (and any live sound) is laid under it with a fade at the end, the mix
+normalised to LOUDNESS_LUFS with true peaks under TRUE_PEAK_DB. Shots that dissolve are cut
+longer by half a dissolve on each side, from the source handles.
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from toystudio.engine.media.ffmpeg import find_tool, has_filter, popen_flags
 
 FADE_US = 600_000
 MUSIC_FADE_US = 2_500_000
+LOUDNESS_LUFS = -14  # web delivery (YouTube, Instagram normalise to about this)
+TRUE_PEAK_DB = -1.5  # headroom for the AAC encoder's overshoot
 
 
 class RenderStopped(Exception):
@@ -261,5 +264,7 @@ def _audio(
     mix = "".join(f"[s{n}]" for n in range(len(sound)))
     fd = MUSIC_FADE_US / US_PER_S
     graph.append(f"{mix}amix=inputs={len(sound)}:normalize=0,atrim=end={seconds:.4f},"
-                 f"afade=t=out:st={max(seconds - fd, 0):.3f}:d={fd:.3f}[a]")  # fmt: skip
+                 f"afade=t=out:st={max(seconds - fd, 0):.3f}:d={fd:.3f},"
+                 f"loudnorm=I={LOUDNESS_LUFS}:TP={TRUE_PEAK_DB}:LRA=11,"
+                 f"aresample=48000[a]")  # fmt: skip
     return graph, inputs

@@ -23,6 +23,8 @@ MIN_BPM, MAX_BPM = 60.0, 180.0
 CONFIDENT = 0.6
 AC_FULL = 0.3  # normalised autocorrelation that counts as a sure beat
 HINT_SPREAD = 0.1
+FOLLOW_REACH = 0.2  # of a period: how far a beat looks for the music's onset
+FOLLOW_PULL = 0.5  # how much of the way onto it a beat moves
 HINT_MIN_AC = 0.05
 
 
@@ -81,6 +83,28 @@ def beats_from_envelope(
     phases = np.arange(0, int(np.ceil(period)))
     scores = [o[np.clip(np.round(steps + p).astype(int), 0, n - 1)].sum() for p in phases]
     phase = int(phases[int(np.argmax(scores))])
-    grid = np.arange(phase, n, period)
+    grid = _follow(np.arange(phase, n, period), o, period)
     beats = tuple(round(t * US_PER_S / rate) for t in grid)
     return Beats(60.0 * rate / period, beats, confidence)
+
+
+def _follow(grid: np.ndarray, o: np.ndarray, period: float) -> np.ndarray:
+    """The grid walked along the music's own beats: each beat is predicted one period after
+    the one before, then pulled FOLLOW_PULL of the way onto the strongest onset within
+    FOLLOW_REACH of a period - a tempo that drifts (or a period rounded to the envelope's
+    10 ms) is followed beat by beat, a single accent off the beat moves it only a little."""
+    if not len(grid):
+        return grid
+    reach = max(1, int(period * FOLLOW_REACH))
+    out: list[float] = []
+    t = float(grid[0])
+    while t < len(o):
+        i = round(t)
+        lo, hi = max(0, i - reach), min(len(o), i + reach + 1)
+        if hi - lo >= 3:
+            j = lo + int(np.argmax(o[lo:hi]))
+            if o[j] > 0:
+                t += FOLLOW_PULL * (j - t)
+        out.append(t)
+        t += period
+    return np.array(out)

@@ -734,6 +734,40 @@ def _music_under(shots: list[Shot], tracks: dict[int, MusicTrack | None]) -> lis
     return pieces
 
 
+def clip_music(
+    shots: list[Shot], track: MusicTrack | None, by_id: dict[int, DayClip]
+) -> tuple[list[Shot], list[Segment]]:
+    """A clip's music, and its cuts moved onto the music's real beats: the lengths in beats
+    use one even beat, while the music's beats drift a little (by tens of ms); every cut
+    within a third of a beat of a real one moves onto it, then the music is fitted to the
+    new length."""
+    music = _music_under(shots, {0: track})
+    if not shots or not music or track is None or track.beats.confidence < CONFIDENT:
+        return shots, music
+    start = music[0].src_in
+    grid = [b - start for b in track.beats.beats_us if b >= start]
+    reach = track.beat_us // 3
+    out: list[Shot] = []
+    pos = 0
+    for k, s in enumerate(shots):
+        end = pos + s.length
+        if k < len(shots) - 1 and grid:
+            g = min(grid, key=lambda b: abs(b - end))
+            if abs(g - end) <= reach:
+                end = g
+        src = round((end - pos) * s.speed)
+        snapped = replace(s, src_out=s.src_in + src)
+        fits = src >= MIN_SEGMENT_US and s.src_in + src <= by_id[s.media_id].duration
+        out.append(snapped if fits else s)
+        pos += out[-1].length
+    delta = pos - sum(s.length for s in shots)
+    last = music[-1]
+    music[-1] = replace(
+        last, src_out=max(last.src_in + 1, min(last.src_out + delta, last.bound_out))
+    )
+    return out, music
+
+
 def _timeline(shots: list[Shot], music: list[Segment], by_id: dict[int, DayClip]) -> Timeline:
     video = tuple(
         Segment(
@@ -823,7 +857,7 @@ def build_clip(clips: list[DayClip], tracks: list[MusicTrack], kind: ClipKind) -
     beat = track.beat_us if track else FALLBACK_BEAT_US
     shots = finish(_clip_shots(source, target - TEASER_FLASHES * beat, track, kind, 0), by_id,
                    beat)  # fmt: skip
-    music = _music_under(shots, {0: track})
+    shots, music = clip_music(shots, track, by_id)
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), tuple(s.kind for s in secs),
                     _stats(shots, source, 1), dissolves(shots), True, beat,
                     styles(shots))  # fmt: skip

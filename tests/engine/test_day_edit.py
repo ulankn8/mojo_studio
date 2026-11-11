@@ -254,3 +254,24 @@ def test_express_whips_only_its_quick_pairs():
     ex = build_clip(d.clips, [track(124)], "express")
     whips = [p for p, kind in ex.styles if kind == "whip"]
     assert len(whips) <= 2  # takes cut into several shots in a row are not whips
+
+
+def test_cuts_land_on_the_musics_real_beats():
+    from itertools import accumulate
+
+    from toystudio.engine.edit.day import Shot, clip_music
+
+    r = Reason("x", "x", "x")
+    # an even 500 ms beat that the music drifts away from: +6 ms every beat
+    beats = tuple(1_000_000 + k * 506_000 for k in range(200))
+    track = MusicTrack(9, 120 * S, Beats(120.0, beats, 0.9))
+    clips = {k: DayClip(k, "стаб", 0, 30 * S, True) for k in range(1, 21)}
+    shots = [
+        Shot(k, 2 * S, 4 * S, False, r, 0, part="development") for k in range(1, 21)
+    ]  # 4 beats
+    snapped, music = clip_music(shots, track, clips)
+    cuts = list(accumulate(s.length for s in snapped))[:-1]
+    grid = [b - music[0].src_in for b in beats]
+    assert all(min(abs(c - g) for g in grid) <= 1_000 for c in cuts)  # on the real beats
+    assert music[-1].src_out - music[0].src_in >= sum(s.length for s in snapped) - S
+    assert cuts[-1] > 19 * 4 * 500_000  # the drift is followed: later than the even grid

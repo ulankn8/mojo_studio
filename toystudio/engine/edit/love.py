@@ -26,9 +26,9 @@ from toystudio.engine.edit.day import (
     MusicTrack,
     Shot,
     _good_start,
-    _music_under,
     _stats,
     _timeline,
+    clip_music,
     dissolves,
     finish,
     styles,
@@ -153,7 +153,7 @@ def build_from_plan(
                              0, last.speed, last.part)  # fmt: skip
     if shots and lively:
         shots = finish(shots, by_id, beat, with_teaser=with_teaser, pace=not plan.revised)
-    music = _music_under(shots, {0: track})
+    shots, music = clip_music(shots, track, by_id)
     source = [by_id[i] for i in {s.media_id for s in shots}]
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), ("love",),
                     _stats(shots, source, 1), dissolves(shots), True, beat,

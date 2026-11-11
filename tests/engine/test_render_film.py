@@ -132,3 +132,22 @@ def test_storage_keeps_moves_and_reads_old_timelines():
     obj = json.loads(timeline_to_json(t))
     del obj["video"][0]["move"]
     assert timeline_from_json(json.dumps(obj)).video[0].move == ""
+
+
+@needs_ffmpeg
+def test_the_mix_is_normalised_for_the_web(tmp_path):
+    import re
+    import subprocess
+
+    from toystudio.engine.render.film import LOUDNESS_LUFS
+
+    src = _sources(tmp_path)
+    items = [Item("V1", 1, 0, 4 * S, 0, 4 * S), Item("M", 9, 0, 4 * S, 0, 4 * S)]
+    out = render_film(
+        items, src, {1: 6 * S, 9: 10 * S}, tmp_path / "m.mp4", settings=SMALL, fade=False
+    )
+    log = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(out), "-af", "ebur128=peak=true",
+                          "-f", "null", "-"], capture_output=True, text=True, check=True).stderr  # fmt: skip
+    lufs = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", log)[-1])
+    peak = float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", log)[-1])
+    assert abs(lufs - LOUDNESS_LUFS) <= 2 and peak <= -0.5

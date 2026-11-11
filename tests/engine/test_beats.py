@@ -70,3 +70,21 @@ def test_tempo_hint_finds_a_soft_beat_near_the_ordered_tempo():
     hinted = beats_from_envelope(env, tempo_hint=92)
     assert abs(hinted.tempo - 91) < 3 and hinted.confidence >= CONFIDENT
     assert abs(free.tempo - 91) > 10  # without the hint the busier pulse wins
+
+
+def test_beats_follow_a_tempo_that_drifts():
+    import numpy as np
+
+    from toystudio.engine.audio.beats import beats_from_envelope
+
+    # 120 s of clicks whose tempo slides from 100 to 101.5 BPM: an even grid would drift ~0.9 s
+    env = np.full(12000, 0.05)
+    t, clicks = 50.0, []
+    while t < 11900:
+        clicks.append(t)
+        env[int(t) : int(t) + 3] = 1.0
+        t += 6000 / (100 + 1.5 * t / 12000)
+    b = beats_from_envelope(env)
+    beats = np.array(b.beats_us) / 10_000  # in envelope frames
+    near = [np.min(np.abs(beats - c)) for c in clicks[5:-5]]
+    assert np.median(near) <= 2 and np.max(near) <= 6  # within 20 / 60 ms all the way
