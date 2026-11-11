@@ -92,6 +92,7 @@ class MusicTrack:
     media_id: int
     duration: int
     beats: Beats
+    made_for: str = ""  # "sde" / "express": written by the AI for that clip, and preferred
 
     @property
     def beat_us(self) -> int:
@@ -463,9 +464,14 @@ def dissolves(shots: list[Shot] | tuple[Shot, ...]) -> tuple[int, ...]:
 
 
 def _pick_tracks(tracks: list[MusicTrack]) -> tuple[list[MusicTrack], MusicTrack | None]:
-    """Fast tracks for the montage, the slowest for the love story."""
+    """Fast tracks for the montage, the slowest for the love story; music the AI wrote for
+    the express / the love story comes first for it (the newest when there are several)."""
     by_tempo = sorted(tracks, key=lambda t: (-(t.beats.tempo or 0), t.media_id))
-    return by_tempo, (by_tempo[-1] if by_tempo else None)
+    made_fast = sorted((t for t in tracks if t.made_for == "express"), key=lambda t: -t.media_id)
+    fast = made_fast + [t for t in by_tempo if t.made_for != "express"]
+    made = [t for t in tracks if t.made_for == "sde"]
+    slow = max(made, key=lambda t: t.media_id) if made else (by_tempo[-1] if by_tempo else None)
+    return fast, slow
 
 
 def _music_under(shots: list[Shot], tracks: dict[int, MusicTrack | None]) -> list[Segment]:
@@ -481,8 +487,13 @@ def _music_under(shots: list[Shot], tracks: dict[int, MusicTrack | None]) -> lis
     for sec in order:
         track, need = tracks.get(sec), by_section[sec]
         first = True
+        start = track.first_beat if track else 0
+        if track is not None and track.made_for and track.duration - start >= need:
+            # music written for the clip ends on its own last chord: end the clip with it
+            beat = track.beat_us
+            start += (track.duration - start - need) // beat * beat
         while need > 0 and track is not None and track.duration > track.first_beat:
-            at = track.first_beat
+            at = start if first else track.first_beat
             take = min(need, track.duration - at)
             if take < (MIN_SEGMENT_US if first else LOOP_MIN_US):
                 break

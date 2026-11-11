@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -77,6 +78,35 @@ _DRAFT_ERRORS = {
         "AnalysisScreen", "План ИИ не найден — соберите Love Story с ИИ ещё раз."
     ),
     "render_failed": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось сохранить видео."),
+    "music_no_key": QT_TRANSLATE_NOOP(
+        "AnalysisScreen",
+        "Для музыки нужен ключ Google Gemini API с оплатой: создайте его на aistudio.google.com, "
+        'выполните в PowerShell setx GEMINI_API_KEY "ваш-ключ" и перезапустите программу.',
+    ),
+    "music_bad_key": QT_TRANSLATE_NOOP(
+        "AnalysisScreen",
+        "Ключ Gemini не подошёл или не включена оплата — проверьте на aistudio.google.com.",
+    ),
+    "music_network": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Нет связи с Google — проверьте интернет и попробуйте ещё раз."
+    ),
+    "music_refusal": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "ИИ не смог написать музыку — попробуйте другое настроение."
+    ),
+    "music_empty": QT_TRANSLATE_NOOP("AnalysisScreen", "ИИ не вернул музыку — попробуйте ещё раз."),
+    "music_bad_request": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Google не принял запрос музыки — попробуйте ещё раз позже."
+    ),
+    "music_error": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось сохранить музыку в проект."),
+}
+_MUSIC_KINDS = {
+    "sde": QT_TRANSLATE_NOOP("AnalysisScreen", "Love Story"),
+    "express": QT_TRANSLATE_NOOP("AnalysisScreen", "Экспресс-видео"),
+}
+_MOODS = {
+    "romantic": QT_TRANSLATE_NOOP("AnalysisScreen", "романтичное кино"),
+    "light": QT_TRANSLATE_NOOP("AnalysisScreen", "лёгкое и светлое"),
+    "epic": QT_TRANSLATE_NOOP("AnalysisScreen", "эпичное"),
 }
 FEED_LIMIT = 50  # cards shown; the rest is a single «и ещё N» line
 
@@ -172,6 +202,11 @@ class AnalysisScreen(QWidget):
             self.draft_buttons[kind] = b
             draft_row.addWidget(b)
         draft_row.addStretch(1)
+        self.music_button = QPushButton()
+        self.music_menu = QMenu(self.music_button)
+        self._menu_kinds: tuple[str, ...] = ()
+        self.music_button.setMenu(self.music_menu)
+        draft_row.addWidget(self.music_button)
         self.render_button = QPushButton()
         draft_row.addWidget(self.render_button)
         self.open_folder_button = QPushButton()
@@ -289,6 +324,9 @@ class AnalysisScreen(QWidget):
         self.open_folder_button.setVisible(vm.draft is not None)
         self.render_button.setVisible(vm.can_render or vm.render_busy)
         clips = any(k in CLIP_KINDS for k in vm.draft_kinds)
+        self.music_button.setVisible(bool(vm.music_kinds))
+        self.music_button.setEnabled(not vm.music_busy and not vm.ai_busy and not vm.render_busy)
+        self._fill_music_menu()
         self.effects_check.setVisible(clips)
         self.effects_check.setEnabled(not vm.ai_busy and not vm.render_busy)
         self.render_button.setEnabled(not vm.ai_busy)
@@ -448,7 +486,45 @@ class AnalysisScreen(QWidget):
         self._render()
 
     # ---- i18n
+    def _fill_music_menu(self, force: bool = False) -> None:
+        """Clip × mood items, rebuilt only when the clips on offer (or the language) change."""
+        kinds = self.vm.music_kinds
+        if kinds == self._menu_kinds and not force:
+            return
+        self._menu_kinds = kinds
+        self.music_menu.clear()
+        for kind in kinds:
+            clip = QCoreApplication.translate("AnalysisScreen", _MUSIC_KINDS[kind])
+            for mood, mood_text in _MOODS.items():
+                text = f"{clip} · {QCoreApplication.translate('AnalysisScreen', mood_text)}"
+                action = self.music_menu.addAction(text)
+                action.triggered.connect(lambda _=False, k=kind, m=mood: self.vm.write_music(k, m))
+
+    def music_text(self) -> str:
+        vm = self.vm
+        if vm.music_busy:
+            return QCoreApplication.translate(
+                "AnalysisScreen", "ИИ пишет музыку под клип — около минуты…"
+            )
+        if vm.music_path is not None and vm.music is not None:
+            return (
+                QCoreApplication.translate(
+                    "AnalysisScreen",
+                    "Музыка готова: %1 · ≈ $%2. Соберите клип заново — он ляжет под неё.",
+                )
+                .replace("%1", vm.music_path.name)
+                .replace("%2", f"{vm.music.cost_usd:.2f}")
+            )
+        if vm.music_error is not None:
+            return QCoreApplication.translate(
+                "AnalysisScreen", _DRAFT_ERRORS.get(vm.music_error, _DRAFT_ERRORS["music_error"])
+            )
+        return ""
+
     def draft_text(self) -> str:
+        return "\n".join(t for t in (self._draft_text(), self.music_text()) if t)
+
+    def _draft_text(self) -> str:
         vm = self.vm
         if vm.ai_busy:
             return QCoreApplication.translate(
@@ -572,6 +648,9 @@ class AnalysisScreen(QWidget):
         )
         self.open_folder_button.setIcon(icon("folder", token("ink-muted"), 16))
         self._set_render_text()
+        self.music_button.setText(QCoreApplication.translate("AnalysisScreen", "Музыка ИИ"))
+        self.music_button.setIcon(icon("music", token("ink-muted"), 16))
+        self._fill_music_menu(force=True)
         self.effects_check.setText(
             QCoreApplication.translate(
                 "AnalysisScreen", "Световые эффекты: блики, линии и волны поверх клипа"

@@ -13,6 +13,7 @@ import json
 import shutil
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -20,11 +21,11 @@ import numpy as np
 
 from toystudio.core.ai_plan import AiClip, AiPlan, AiShot
 from toystudio.core.clock import camera_spans, reference_camera, shot_time, suspicious
-from toystudio.core.models import AudioLabel, MediaInfo, MediaRole, MediaRow, MediaStatus
+from toystudio.core.models import US_PER_S, AudioLabel, MediaInfo, MediaRole, MediaRow, MediaStatus
 from toystudio.engine.analysis import single_pass
 from toystudio.engine.analysis.jitter import jitter, shaky_spans
 from toystudio.engine.analysis.single_pass import outputs_for
-from toystudio.engine.audio.beats import CONFIDENT, beats_from_envelope
+from toystudio.engine.audio.beats import CONFIDENT, ENV_HZ, Beats, beats_from_envelope
 from toystudio.engine.color.grade import LOOK_NAME, balance, chroma, film_chroma, write_cube
 from toystudio.engine.edit.day import (
     CLIP_FPS,
@@ -61,6 +62,14 @@ _TITLES: dict[str, tuple[str, str]] = {  # kind -> (cut title, file suffix)
 AI_FRAME_WIDTH = 320  # 320x180: 84 tokens a frame
 AI_FRAME_AT = (0.1, 0.5, 0.9)  # beginning, middle and end: where the best moment is
 PLAN_FILE = "love_plan.json"
+AI_MUSIC = "T-Studio ИИ"  # file names of the AI's music: "T-Studio ИИ · sde · romantic · <time>"
+AUDIBLE = 0.05  # of the loudest moment (about -26 dB): where a track's music begins
+# the clip each AI piece is written for: (length, tempo); 3 s more than the clip, as a
+# margin for the silent lead-in AI music has (the clip ends on the music's own ending)
+CLIP_MUSIC: dict[str, tuple[float, int]] = {
+    "sde": (SDE_US / 1_000_000 + 3, 92),
+    "express": (183.0, 124),
+}
 AI_FLAG_SHARE = 0.3  # a clip is «трясётся» when this much of it shakes
 _FLAG_TEXT = {"shaky": "трясётся", "blurry": "размыто", "dark": "темно"}
 
@@ -143,9 +152,44 @@ def _music(store: ProjectStore) -> list[MusicTrack]:
         if not out.envelope.is_file():
             single_pass.run_audio(m.path, info, out, on_progress=lambda _s: None,
                                   should_stop=lambda: False)  # fmt: skip
-        beats = beats_from_envelope(np.load(out.envelope))
-        tracks.append(MusicTrack(m.id, info.duration_us, beats))
+        made_for = _made_for(m.path)
+        hint = CLIP_MUSIC[made_for][1] if made_for else None  # the tempo it was written to
+        env = np.load(out.envelope)
+        beats = _audible(beats_from_envelope(env, tempo_hint=hint), env)
+        tracks.append(MusicTrack(m.id, info.duration_us, beats, made_for))
     return tracks
+
+
+def _audible(beats: Beats, env: np.ndarray) -> Beats:
+    """Beats from where the music is heard: a silent lead-in (AI music has one) is skipped."""
+    loud = np.flatnonzero(env > AUDIBLE * float(env.max())) if len(env) else np.array([])
+    if not len(loud) or not beats.beats_us:
+        return beats
+    start = round(int(loud[0]) * US_PER_S / ENV_HZ) - beats.period_us // 4
+    return replace(beats, beats_us=tuple(b for b in beats.beats_us if b >= start))
+
+
+def _made_for(path: Path) -> str:
+    """ "sde" / "express" for music the AI wrote for that clip (see add_ai_music)."""
+    parts = path.stem.split(" · ")
+    return parts[1] if len(parts) > 2 and parts[0] == AI_MUSIC and parts[1] in CLIP_MUSIC else ""
+
+
+def add_ai_music(root: Path, audio: bytes, kind: str, mood: str) -> Path:
+    """Save the AI's music into the project's music folder and add it to the library."""
+    if kind not in CLIP_MUSIC:
+        raise ValueError(kind)
+    stamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+    path = root / "music" / f"{AI_MUSIC} · {kind} · {mood} · {stamp}.mp3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(audio)
+    store = ProjectStore.open(root)
+    try:
+        mid, _ = store.add_media(path, MediaRole.MUSIC, len(audio), True)
+        store.set_media_info(mid, probe_media(path))
+    finally:
+        store.close()
+    return path
 
 
 def _day_clips(store: ProjectStore, media: list[MediaRow], skip_clocks: bool) -> list[DayClip]:

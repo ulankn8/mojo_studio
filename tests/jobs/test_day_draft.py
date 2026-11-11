@@ -263,3 +263,39 @@ def test_love_story_avoids_hand_shake_measured_on_the_proxy(tmp_path):
         assert _shaky(s, {mid})[mid] == [(0, 3_000_000)]  # read from the cache, not decoded
     finally:
         s.close()
+
+
+@needs_ffmpeg
+def test_ai_music_joins_the_library_and_leads_the_love_story(tmp_path):
+    import subprocess
+
+    from toystudio.jobs.day_draft import _music, add_ai_music
+
+    mp3 = tmp_path / "song.mp3"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=6", str(mp3)], check=True)  # fmt: skip
+    root = _project(tmp_path, drone_hours_off=0)
+    path = add_ai_music(root, mp3.read_bytes(), "sde", "romantic")
+    assert path.parent == root / "music" and path.name.startswith("T-Studio ИИ · sde · romantic")
+    s = ProjectStore.open(root)
+    try:
+        (track,) = _music(s)
+        assert track.made_for == "sde" and track.duration > 5_000_000
+    finally:
+        s.close()
+    with pytest.raises(ValueError):
+        add_ai_music(root, b"x", "film", "romantic")
+
+
+def test_beats_start_where_the_music_is_heard():
+    import numpy as np
+
+    from toystudio.engine.audio.beats import Beats
+    from toystudio.jobs.day_draft import _audible
+
+    env = np.full(1000, 0.3)
+    env[:250] = 0.0001  # 2.5 s of silence before the piano
+    beats = Beats(100.0, tuple(range(0, 10_000_000, 600_000)), 0.9)
+    heard = _audible(beats, env)
+    assert heard.beats_us[0] >= 2_500_000 - 150_000 and heard.beats_us[0] < 2_500_000 + 600_000
+    assert _audible(beats, np.full(1000, 0.3)) == beats  # music from the start: unchanged

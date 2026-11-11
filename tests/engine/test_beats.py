@@ -53,3 +53,20 @@ def test_speech_like_bursts_are_not_a_beat():
         env[pos : pos + length] += rng.uniform(0.1, 1.0)
         pos += length
     assert beats_from_envelope(env).confidence < CONFIDENT
+
+
+def test_tempo_hint_finds_a_soft_beat_near_the_ordered_tempo():
+    import numpy as np
+
+    from toystudio.engine.audio.beats import CONFIDENT, beats_from_envelope
+
+    rng = np.random.default_rng(3)
+    env = 0.2 + 0.05 * rng.random(9000)  # 90 s at 100 Hz of soft piano-like noise
+    for k in range(0, 9000, 66):  # a soft accent every 0.66 s (~91 BPM)
+        env[k : k + 4] += 0.12
+    for k in range(0, 9000, 37):  # and busier ornaments (~162 BPM), louder
+        env[k : k + 2] += 0.2
+    free = beats_from_envelope(env)
+    hinted = beats_from_envelope(env, tempo_hint=92)
+    assert abs(hinted.tempo - 91) < 3 and hinted.confidence >= CONFIDENT
+    assert abs(free.tempo - 91) > 10  # without the hint the busier pulse wins

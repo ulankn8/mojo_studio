@@ -19,6 +19,7 @@ from PySide6.QtCore import (
 )
 
 from toystudio.app.i18n import current_language
+from toystudio.cloud.composer import AiMusic, ComposerError, compose
 from toystudio.cloud.director import DirectorError, plan_love_story
 from toystudio.core.ai_plan import AiPlan
 from toystudio.core.eta import DEFAULT_X_RT, SPEECH_X_RT
@@ -41,7 +42,9 @@ from toystudio.core.models import (
 from toystudio.engine.analysis.quality import overall_label
 from toystudio.engine.render.film import RenderStopped
 from toystudio.jobs.day_draft import (
+    CLIP_MUSIC,
     RenderResult,
+    add_ai_music,
     build_day_draft,
     clocks,
     love_inputs,
@@ -181,6 +184,30 @@ class _RenderTask(QObject, QRunnable):
             self.done.emit(result, None)
 
 
+class _MusicTask(QObject, QRunnable):
+    """AI music for a clip off the GUI thread: the request to Lyria, then into the library."""
+
+    done = Signal(object, object, object)  # Path | None, AiMusic | None, error code | None
+
+    def __init__(self, root: Path, kind: str, mood: str) -> None:
+        QObject.__init__(self)
+        QRunnable.__init__(self)
+        self.setAutoDelete(False)
+        self.root, self.kind, self.mood = root, kind, mood
+
+    def run(self) -> None:
+        seconds, bpm = CLIP_MUSIC[self.kind]
+        try:
+            music = compose(seconds, mood=self.mood, bpm=bpm)
+            path = add_ai_music(self.root, music.audio, self.kind, self.mood)
+        except ComposerError as e:
+            self.done.emit(None, None, f"music_{e.code}")
+        except (OSError, sqlite3.Error, ValueError, RuntimeError):
+            self.done.emit(None, None, "music_error")
+        else:
+            self.done.emit(path, music, None)
+
+
 @dataclass
 class _Snapshot:
     name: str = ""
@@ -259,6 +286,11 @@ class AnalysisVM(QObject):
         self.render_error: str | None = None
         self._render_task: _RenderTask | None = None
         self.effects = True  # light overlays (waves, lines, leaks) on clips
+        self.music_busy = False
+        self.music_path: Path | None = None
+        self.music: AiMusic | None = None
+        self.music_error: str | None = None
+        self._music_task: _MusicTask | None = None
         jobs.progress.connect(self._on_progress)
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_finished)
@@ -309,6 +341,30 @@ class AnalysisVM(QObject):
         self._render_task.progress.connect(self._on_render_progress)
         self._render_task.done.connect(self._on_render_done)
         QThreadPool.globalInstance().start(self._render_task)
+        self.changed.emit()
+
+    @property
+    def music_kinds(self) -> tuple[str, ...]:
+        """Clips the AI can write music for in this project: the love story, the express."""
+        kinds = self.draft_kinds
+        out = ("sde",) if {"sde", "sde_ai"} & set(kinds) else ()
+        return out + (("express",) if "express" in kinds else ())
+
+    def write_music(self, kind: str, mood: str) -> None:
+        """Ask Lyria for the clip's music in the background; it joins the music library."""
+        if self.music_busy or kind not in self.music_kinds:
+            return
+        self.music_busy, self.music_path, self.music, self.music_error = True, None, None, None
+        self._music_task = _MusicTask(self.root, kind, mood)
+        self._music_task.done.connect(self._on_music_done)
+        QThreadPool.globalInstance().start(self._music_task)
+        self.changed.emit()
+
+    def _on_music_done(self, path: object, music: object, error: object) -> None:
+        self.music_busy, self._music_task = False, None
+        self.music_path = path if isinstance(path, Path) else None
+        self.music = music if isinstance(music, AiMusic) else None
+        self.music_error = error if isinstance(error, str) else None
         self.changed.emit()
 
     def stop_render(self) -> None:

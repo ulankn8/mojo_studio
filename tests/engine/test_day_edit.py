@@ -208,3 +208,22 @@ def test_music_does_not_start_over_for_a_short_tail():
     assert piece.src_out - piece.src_in == 89 * S
     longer = [Shot(1, 0, 89 * S + LOOP_MIN_US + S, False, r, 0)]
     assert len(_music_under(longer, {0: short})) == 2  # a real loop is still a loop
+
+
+def test_music_written_for_a_clip_is_chosen_and_ends_the_clip():
+    from dataclasses import replace
+
+    from toystudio.engine.edit.day import Shot, _music_under, _pick_tracks
+
+    slow = MusicTrack(1, 200 * S, Beats(70.0, tuple(range(S, 200 * S, 857_000)), 0.9))
+    fast = MusicTrack(2, 200 * S, Beats(130.0, tuple(range(S, 200 * S, 461_000)), 0.9))
+    ai_sde = replace(MusicTrack(3, 95 * S, Beats(92.0, tuple(range(S, 95 * S, 652_000)), 0.9)),
+                     made_for="sde")  # fmt: skip
+    ai_ex = replace(fast, media_id=4, made_for="express")
+    fast_list, slow_pick = _pick_tracks([slow, fast, ai_sde, ai_ex])
+    assert slow_pick is ai_sde and fast_list[0] is ai_ex
+    assert _pick_tracks([slow, fast])[1] is slow  # without AI music: the slowest, as before
+    r = Reason("x", "x", "x")
+    (piece,) = _music_under([Shot(1, 0, 88 * S, False, r, 0)], {0: ai_sde})
+    assert piece.src_out - piece.src_in == 88 * S
+    assert 95 * S - piece.src_out < 652_000  # ends on the song's own ending (within a beat)

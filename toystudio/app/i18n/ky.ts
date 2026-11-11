@@ -4,57 +4,57 @@
 <context>
     <name>AnalysisScreen</name>
     <message>
-        <location filename="../screens/analysis.py" line="302"/>
+        <location filename="../screens/analysis.py" line="340"/>
         <source>Не удалось проанализировать: %1</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоо мүмкүн болгон жок: %1</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="310"/>
+        <location filename="../screens/analysis.py" line="348"/>
         <source>Файл не найден: %1. Подключите диск с ним или замените файл.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Файл табылган жок: %1. Ал сакталган дискти туташтырыңыз же файлды алмаштырыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="406"/>
+        <location filename="../screens/analysis.py" line="444"/>
         <source>и ещё %1</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">жана дагы %1</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="421"/>
+        <location filename="../screens/analysis.py" line="459"/>
         <source>Анализ остановился из-за ошибки.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоо ката кетип токтоп калды.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="422"/>
+        <location filename="../screens/analysis.py" line="460"/>
         <source>Пройденные этапы сохранены. Попробуйте продолжить.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Өтүлгөн этаптар сакталды. Улантып көрүңүз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="428"/>
-        <location filename="../screens/analysis.py" line="606"/>
-        <location filename="../screens/analysis.py" line="607"/>
+        <location filename="../screens/analysis.py" line="466"/>
+        <location filename="../screens/analysis.py" line="685"/>
+        <location filename="../screens/analysis.py" line="686"/>
         <source>Повторить</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Кайталоо</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="433"/>
+        <location filename="../screens/analysis.py" line="471"/>
         <source>Ни один файл не удалось проанализировать.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Бир да файлды талдоо мүмкүн болгон жок.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="436"/>
+        <location filename="../screens/analysis.py" line="474"/>
         <source>Проверьте файлы на шаге «Файлы».</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">«Файлдар» кадамындагы файлдарды текшериңиз.</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="412"/>
+        <location filename="../viewmodels/analysis_vm.py" line="468"/>
         <source>Анализ «%1» готов</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">«%1» талдоосу даяр</translation>
@@ -66,235 +66,325 @@
         <translation type="unfinished">T-Studio</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="585"/>
+        <location filename="../screens/analysis.py" line="664"/>
         <source>Анализ идёт на этом компьютере, интернет не нужен</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоо ушул компьютерде жүрүп жатат, интернет керек эмес</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="589"/>
+        <location filename="../screens/analysis.py" line="668"/>
         <source>Уже найдено</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Табылгандар</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="591"/>
+        <location filename="../screens/analysis.py" line="670"/>
         <source>Моменты появятся после поиска тостов и танцев</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Тосттор менен бийлер изделгенден кийин учурлар пайда болот</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="598"/>
+        <location filename="../screens/analysis.py" line="677"/>
         <source>Уведомить, когда закончится</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Бүткөндө кабарлоо</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="601"/>
+        <location filename="../screens/analysis.py" line="680"/>
         <source>Свернуть</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Жыйыштыруу</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="602"/>
+        <location filename="../screens/analysis.py" line="681"/>
         <source>Остановить</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Токтотуу</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="604"/>
+        <location filename="../screens/analysis.py" line="683"/>
         <source>Продолжить анализ</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоону улантуу</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="609"/>
+        <location filename="../screens/analysis.py" line="688"/>
         <source>Замените файл на шаге «Файлы».</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Файлды «Файлдар» кадамында алмаштырыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="612"/>
+        <location filename="../screens/analysis.py" line="691"/>
         <source>Пройденные этапы сохранены</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Өтүлгөн этаптар сакталды</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="614"/>
+        <location filename="../screens/analysis.py" line="693"/>
         <source>Анализ завершён</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоо аяктады</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="48"/>
+        <location filename="../screens/analysis.py" line="49"/>
         <source>Камеры не совпали со звуком — черновик не из чего собрать.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Камералар үн менен дал келген жок — кара көчүрмөнү эч нерседен түзүүгө болбойт.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="51"/>
+        <location filename="../screens/analysis.py" line="52"/>
         <source>В записи не нашлось речи и танцев — черновик пустой.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Жазууда сөз да, бий да табылган жок — кара көчүрмө бош.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="72"/>
+        <location filename="../screens/analysis.py" line="73"/>
         <source>Не удалось собрать черновик.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Кара көчүрмөнү түзүү мүмкүн болгон жок.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="479"/>
+        <location filename="../screens/analysis.py" line="555"/>
         <source>Черновик: %1, склеек %2, убрано пауз и музыки %3</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Кара көчүрмө: %1, кесилиштер %2, тыныгуулар жана музыка алынды %3</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="42"/>
+        <location filename="../screens/analysis.py" line="43"/>
         <source>Собрать черновик для Premiere</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Premiere үчүн кара көчүрмө түзүү</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="571"/>
+        <location filename="../screens/analysis.py" line="647"/>
         <source>Открыть папку</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Папканы ачуу</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="40"/>
+        <location filename="../screens/analysis.py" line="41"/>
         <source>Черновик до ресторана</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Ресторанга чейинки кара көчүрмө</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="41"/>
+        <location filename="../screens/analysis.py" line="42"/>
         <source>Черновик ресторана</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Ресторандын кара көчүрмөсү</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="43"/>
+        <location filename="../screens/analysis.py" line="44"/>
         <source>Собрать экспресс-видео</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Экспресс-видео түзүү</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="44"/>
+        <location filename="../screens/analysis.py" line="45"/>
         <source>Собрать клип Love Story</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Love Story клибин түзүү</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="54"/>
+        <location filename="../screens/analysis.py" line="55"/>
         <source>Часы камер не сверены — сверьте их, чтобы собрать черновик.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Камералардын сааттары салыштырылган жок — кара көчүрмө түзүү үчүн аларды салыштырыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="493"/>
+        <location filename="../screens/analysis.py" line="81"/>
+        <source>Для музыки нужен ключ Google Gemini API с оплатой: создайте его на aistudio.google.com, выполните в PowerShell setx GEMINI_API_KEY &quot;ваш-ключ&quot; и перезапустите программу.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Музыка үчүн төлөмү бар Google Gemini API ачкычы керек: аны aistudio.google.com сайтында түзүп, PowerShell'де setx GEMINI_API_KEY &quot;сиздин-ачкыч&quot; аткарыңыз жана программаны кайра ачыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="86"/>
+        <source>Ключ Gemini не подошёл или не включена оплата — проверьте на aistudio.google.com.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Gemini ачкычы туура эмес же төлөм күйгүзүлгөн эмес — aistudio.google.com сайтынан текшериңиз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="90"/>
+        <source>Нет связи с Google — проверьте интернет и попробуйте ещё раз.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Google менен байланыш жок — интернетти текшерип, кайра аракет кылыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="93"/>
+        <source>ИИ не смог написать музыку — попробуйте другое настроение.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ музыка жаза алган жок — башка маанайды тандап көрүңүз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="96"/>
+        <source>ИИ не вернул музыку — попробуйте ещё раз.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ музыка кайтарган жок — кайра аракет кылыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="97"/>
+        <source>Google не принял запрос музыки — попробуйте ещё раз позже.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Google музыка суроосун кабыл алган жок — кийинчерээк кайра аракет кылыңыз.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="100"/>
+        <source>Не удалось сохранить музыку в проект.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Музыканы долбоорго сактоо мүмкүн болбоду.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="103"/>
+        <source>Love Story</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Love Story</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="104"/>
+        <source>Экспресс-видео</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Экспресс-видео</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="107"/>
+        <source>романтичное кино</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">романтикалуу кино</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="108"/>
+        <source>лёгкое и светлое</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">жеңил жана жарык</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="109"/>
+        <source>эпичное</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">эпикалык</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="506"/>
+        <source>ИИ пишет музыку под клип — около минуты…</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ клипке музыка жазып жатат — болжол менен бир мүнөт…</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="511"/>
+        <source>Музыка готова: %1 · ≈ $%2. Соберите клип заново — он ляжет под неё.</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">Музыка даяр: %1 · ≈ $%2. Клипти кайра түзүңүз — ал ушул музыкага ылайыкталат.</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="569"/>
         <source>Цвет в Premiere: «T-Studio Тёплое кино.cube» из той же папки — на корректирующий слой, Lumetri → Creative → Look.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Premiere&apos;де түс: ошол эле папкадагы «T-Studio Тёплое кино.cube» — оңдоочу катмарга, Lumetri → Creative → Look.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="501"/>
+        <location filename="../screens/analysis.py" line="577"/>
         <source>Видео сохранено: %1</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Видео сакталды: %1</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="507"/>
+        <location filename="../screens/analysis.py" line="583"/>
         <source>Исходники не найдены — видео собрано из уменьшенных копий. Подключите диск и сохраните ещё раз для полного качества.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Баштапкы файлдар табылган жок — видео кичирейтилген көчүрмөлөрдөн түзүлдү. Толук сапат үчүн дискти туташтырып, кайра сактаңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="524"/>
+        <location filename="../screens/analysis.py" line="600"/>
         <source>Сохраняю видео… %1 % · остановить</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Видео сакталууда… %1 % · токтотуу</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="528"/>
+        <location filename="../screens/analysis.py" line="604"/>
         <source>Сохранить видео</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Видеону сактоо</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="576"/>
+        <location filename="../screens/analysis.py" line="651"/>
+        <source>Музыка ИИ</source>
+        <translatorcomment>needs native-speaker review</translatorcomment>
+        <translation type="unfinished">ЖИ музыкасы</translation>
+    </message>
+    <message>
+        <location filename="../screens/analysis.py" line="655"/>
         <source>Световые эффекты: блики, линии и волны поверх клипа</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Жарык эффекттери: клиптин үстүндө жылтылдар, сызыктар жана толкундар</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="581"/>
+        <location filename="../screens/analysis.py" line="660"/>
         <source>Черновики для Premiere</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Premiere үчүн кара көчүрмөлөр</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="45"/>
+        <location filename="../screens/analysis.py" line="46"/>
         <source>Love Story с ИИ</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Love Story ЖИ менен</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="57"/>
+        <location filename="../screens/analysis.py" line="58"/>
         <source>Нужен ключ API Anthropic: создайте его на console.anthropic.com, выполните в PowerShell setx ANTHROPIC_API_KEY &quot;ваш-ключ&quot; и перезапустите программу.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Anthropic API ачкычы керек: аны console.anthropic.com сайтында түзүп, PowerShellде setx ANTHROPIC_API_KEY &quot;сиздин-ачкыч&quot; аткарыңыз жана программаны кайра ачыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="62"/>
+        <location filename="../screens/analysis.py" line="63"/>
         <source>Ключ API не подошёл — проверьте его на console.anthropic.com.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">API ачкычы туура келген жок — аны console.anthropic.com сайтында текшериңиз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="65"/>
+        <location filename="../screens/analysis.py" line="66"/>
         <source>Нет связи с Claude — проверьте интернет и попробуйте ещё раз.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Claude менен байланыш жок — интернетти текшерип, кайра аракет кылыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="68"/>
+        <location filename="../screens/analysis.py" line="69"/>
         <source>ИИ не взялся за этот клип — соберите его по правилам.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">ЖИ бул клипти алган жок — аны эрежелер боюнча түзүңүз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="71"/>
+        <location filename="../screens/analysis.py" line="72"/>
         <source>ИИ не вернул план — попробуйте ещё раз.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">ЖИ план кайтарган жок — кайра аракет кылыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="73"/>
+        <location filename="../screens/analysis.py" line="74"/>
         <source>Нет ни исходников, ни уменьшенных копий — подключите диск с файлами.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Баштапкы файлдар да, кичирейтилген көчүрмөлөр да жок — файлдар жазылган дискти туташтырыңыз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="76"/>
+        <location filename="../screens/analysis.py" line="77"/>
         <source>План ИИ не найден — соберите Love Story с ИИ ещё раз.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">ЖИ планы табылган жок — Love Story&apos;ни ЖИ менен кайра түзүңүз.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="79"/>
+        <location filename="../screens/analysis.py" line="80"/>
         <source>Не удалось сохранить видео.</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Видеону сактоо мүмкүн болбоду.</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="454"/>
+        <location filename="../screens/analysis.py" line="530"/>
         <source>ИИ смотрит кадры и выстраивает историю — около минуты…</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">ЖИ кадрларды карап, окуяны түзүүдө — болжол менен бир мүнөт…</translation>
     </message>
     <message>
-        <location filename="../screens/analysis.py" line="470"/>
+        <location filename="../screens/analysis.py" line="546"/>
         <source>Love Story: %1, склеек %2 · ИИ: «%3» · ≈ $%4</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Love Story: %1, кесилиштер %2 · ЖИ: «%3» · ≈ $%4</translation>
@@ -312,265 +402,265 @@
 <context>
     <name>AnalysisVM</name>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="417"/>
+        <location filename="../viewmodels/analysis_vm.py" line="473"/>
         <source>Анализ «%2» готов — найден %1 момент</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">«%2» талдоосу даяр — %1 учур табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="418"/>
+        <location filename="../viewmodels/analysis_vm.py" line="474"/>
         <source>Анализ «%2» готов — найдено %1 момента</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">«%2» талдоосу даяр — %1 учур табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="419"/>
+        <location filename="../viewmodels/analysis_vm.py" line="475"/>
         <source>Анализ «%2» готов — найдено %1 моментов</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">«%2» талдоосу даяр — %1 учур табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="735"/>
+        <location filename="../viewmodels/analysis_vm.py" line="791"/>
         <source>Готово: %1 файл</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Даяр: %1 файл</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="736"/>
+        <location filename="../viewmodels/analysis_vm.py" line="792"/>
         <source>Готово: %1 файла</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Даяр: %1 файл</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="737"/>
+        <location filename="../viewmodels/analysis_vm.py" line="793"/>
         <source>Готово: %1 файлов</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Даяр: %1 файл</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="742"/>
+        <location filename="../viewmodels/analysis_vm.py" line="798"/>
         <source>Найдено %1 смена сцен</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 сахна алмашуусу табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="743"/>
+        <location filename="../viewmodels/analysis_vm.py" line="799"/>
         <source>Найдено %1 смены сцен</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 сахна алмашуусу табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="744"/>
+        <location filename="../viewmodels/analysis_vm.py" line="800"/>
         <source>Найдено %1 смен сцен</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 сахна алмашуусу табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="755"/>
+        <location filename="../viewmodels/analysis_vm.py" line="811"/>
         <source>Найден %1 участок речи</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 сүйлөө бөлүгү табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="756"/>
+        <location filename="../viewmodels/analysis_vm.py" line="812"/>
         <source>Найдено %1 участка речи</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 сүйлөө бөлүгү табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="757"/>
+        <location filename="../viewmodels/analysis_vm.py" line="813"/>
         <source>Найдено %1 участков речи</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 сүйлөө бөлүгү табылды</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="752"/>
+        <location filename="../viewmodels/analysis_vm.py" line="808"/>
         <source>Звука нет</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Үн жок</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="768"/>
+        <location filename="../viewmodels/analysis_vm.py" line="824"/>
         <source>Моментов не найдено</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Учурлар табылган жок</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="769"/>
+        <location filename="../viewmodels/analysis_vm.py" line="825"/>
         <source>Найдено %1</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Табылды: %1</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="778"/>
+        <location filename="../viewmodels/analysis_vm.py" line="834"/>
         <source>Чётко: %1 файл</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Даана: %1 файл</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="779"/>
+        <location filename="../viewmodels/analysis_vm.py" line="835"/>
         <source>Чётко: %1 файла</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Даана: %1 файл</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="780"/>
+        <location filename="../viewmodels/analysis_vm.py" line="836"/>
         <source>Чётко: %1 файлов</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Даана: %1 файл</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="791"/>
+        <location filename="../viewmodels/analysis_vm.py" line="847"/>
         <source>Готовим копию для анализа</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Талдоо үчүн көчүрмө даярдап жатабыз</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="792"/>
+        <location filename="../viewmodels/analysis_vm.py" line="848"/>
         <source>Слушаем речь и ищем тосты</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Сүйлөгөн сөздү угуп, тосттарды издеп жатабыз</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="793"/>
+        <location filename="../viewmodels/analysis_vm.py" line="849"/>
         <source>Находим смены сцен</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Сахна алмашууларын табып жатабыз</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="794"/>
+        <location filename="../viewmodels/analysis_vm.py" line="850"/>
         <source>Убираем размытые и тёмные кадры</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Бүдөмүк жана караңгы кадрларды алып салып жатабыз</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="795"/>
+        <location filename="../viewmodels/analysis_vm.py" line="851"/>
         <source>Ищем танцы, аплодисменты, музыку</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">Бий, кол чабуу, музыканы издеп жатабыз</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="799"/>
+        <location filename="../viewmodels/analysis_vm.py" line="855"/>
         <source>%1 тост</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 тост</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="800"/>
+        <location filename="../viewmodels/analysis_vm.py" line="856"/>
         <source>%1 тоста</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 тост</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="801"/>
+        <location filename="../viewmodels/analysis_vm.py" line="857"/>
         <source>%1 тостов</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 тост</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="804"/>
+        <location filename="../viewmodels/analysis_vm.py" line="860"/>
         <source>%1 танец</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 бий</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="805"/>
+        <location filename="../viewmodels/analysis_vm.py" line="861"/>
         <source>%1 танца</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 бий</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="806"/>
+        <location filename="../viewmodels/analysis_vm.py" line="862"/>
         <source>%1 танцев</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 бий</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="809"/>
+        <location filename="../viewmodels/analysis_vm.py" line="865"/>
         <source>%1 выход молодых</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 жаштардын чыгышы</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="810"/>
+        <location filename="../viewmodels/analysis_vm.py" line="866"/>
         <source>%1 выхода молодых</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 жаштардын чыгышы</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="811"/>
+        <location filename="../viewmodels/analysis_vm.py" line="867"/>
         <source>%1 выходов молодых</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 жаштардын чыгышы</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="814"/>
+        <location filename="../viewmodels/analysis_vm.py" line="870"/>
         <source>%1 подарок</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 белек</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="815"/>
+        <location filename="../viewmodels/analysis_vm.py" line="871"/>
         <source>%1 подарка</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 белек</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="816"/>
+        <location filename="../viewmodels/analysis_vm.py" line="872"/>
         <source>%1 подарков</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 белек</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="819"/>
+        <location filename="../viewmodels/analysis_vm.py" line="875"/>
         <source>%1 аплодисмент</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 кол чабуу</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="820"/>
+        <location filename="../viewmodels/analysis_vm.py" line="876"/>
         <source>%1 аплодисмента</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 кол чабуу</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="821"/>
+        <location filename="../viewmodels/analysis_vm.py" line="877"/>
         <source>%1 аплодисментов</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 кол чабуу</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="824"/>
+        <location filename="../viewmodels/analysis_vm.py" line="880"/>
         <source>%1 музыка</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 музыка</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="825"/>
+        <location filename="../viewmodels/analysis_vm.py" line="881"/>
         <source>%1 музыки</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 музыка</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="826"/>
+        <location filename="../viewmodels/analysis_vm.py" line="882"/>
         <source>%1 музык</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">%1 музыка</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="830"/>
+        <location filename="../viewmodels/analysis_vm.py" line="886"/>
         <source>темновато</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">караңгылатыш</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="831"/>
+        <location filename="../viewmodels/analysis_vm.py" line="887"/>
         <source>трясётся</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">титирейт</translation>
     </message>
     <message>
-        <location filename="../viewmodels/analysis_vm.py" line="832"/>
+        <location filename="../viewmodels/analysis_vm.py" line="888"/>
         <source>размыто</source>
         <translatorcomment>needs native-speaker review</translatorcomment>
         <translation type="unfinished">бүдөмүк</translation>

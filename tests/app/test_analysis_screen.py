@@ -1064,3 +1064,40 @@ def test_light_effects_switch_reaches_drafts_and_videos(
     screen.render_button.click()
     qtbot.waitUntil(lambda: not vm.render_busy, timeout=5000)
     assert seen == [("draft", False), ("video", False)]
+
+
+def test_ai_music_menu_writes_music_in_the_background(
+    qtbot, project, jobs, app_store, monkeypatch, tmp_path
+):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.cloud.composer import AiMusic, ComposerError
+
+    vm, screen = _ai_screen(qtbot, project, jobs, app_store, monkeypatch, lambda *a, **k: None)
+    assert not screen.music_button.isHidden() and vm.music_kinds == ("sde",)
+    actions = screen.music_menu.actions()
+    assert [a.text() for a in actions] == [
+        "Love Story · романтичное кино",
+        "Love Story · лёгкое и светлое",
+        "Love Story · эпичное",
+    ]
+    asked = []
+
+    def fake_compose(seconds, *, mood, bpm):
+        asked.append((seconds, mood, bpm))
+        return AiMusic(b"mp3")
+
+    monkeypatch.setattr(avm, "compose", fake_compose)
+    monkeypatch.setattr(avm, "add_ai_music", lambda root, audio, kind, mood: tmp_path / "x.mp3")
+    actions[2].trigger()
+    assert vm.music_busy and "пишет музыку" in screen.draft_label.text()
+    qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
+    assert asked == [(91.0, "epic", 92)]  # 3 s of margin for the lead-in
+    assert "Музыка готова: x.mp3" in screen.draft_label.text()
+
+    def no_key(*_a, **_k):
+        raise ComposerError("no_key")
+
+    monkeypatch.setattr(avm, "compose", no_key)
+    actions[0].trigger()
+    qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
+    assert "setx GEMINI_API_KEY" in screen.draft_label.text()
