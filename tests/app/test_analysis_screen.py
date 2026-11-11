@@ -915,7 +915,7 @@ def test_wrong_clocks_open_the_dialog_then_retry(qtbot, project, jobs, app_store
     _finish(store, ids, jobs, project)
     calls = []
 
-    def fake_day(_root, kind, *, skip_clocks=False):
+    def fake_day(_root, kind, *, skip_clocks=False, effects=True):
         calls.append((kind, skip_clocks))
         raise DraftError("clocks" if not skip_clocks else "nothing_to_keep")
 
@@ -1034,3 +1034,33 @@ def test_ai_without_a_key_explains_what_to_do(qtbot, project, jobs, app_store, m
     assert "console.anthropic.com" in screen.draft_label.text()
     assert "setx ANTHROPIC_API_KEY" in screen.draft_label.text()
     assert screen.open_folder_button.isHidden()
+
+
+def test_light_effects_switch_reaches_drafts_and_videos(
+    qtbot, project, jobs, app_store, monkeypatch, tmp_path
+):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.engine.edit.restaurant import DraftStats
+    from toystudio.jobs.day_draft import RenderResult
+    from toystudio.jobs.restaurant_draft import DraftResult
+
+    vm, screen = _ai_screen(qtbot, project, jobs, app_store, monkeypatch, lambda *a, **k: None)
+    assert not screen.effects_check.isHidden() and screen.effects_check.isChecked()
+    seen = []
+    stats = DraftStats(duration_us=88_000_000, cuts=47, dropped_us=0, blocks=1)
+
+    def fake_build(_root, kind, **kw):
+        seen.append(("draft", kw["effects"]))
+        return DraftResult(tmp_path / "x.xml", "cut", stats)
+
+    def fake_render(_root, kind, **kw):
+        seen.append(("video", kw["effects"]))
+        return RenderResult(tmp_path / "x.mp4", from_proxy=False)
+
+    monkeypatch.setattr(avm, "build_day_draft", fake_build)
+    monkeypatch.setattr(avm, "render_draft", fake_render)
+    screen.effects_check.setChecked(False)
+    screen.draft_buttons["sde"].click()
+    screen.render_button.click()
+    qtbot.waitUntil(lambda: not vm.render_busy, timeout=5000)
+    assert seen == [("draft", False), ("video", False)]

@@ -134,3 +134,18 @@ def test_dissolve_without_handles_stays_a_cut():
     track = _v1(items, dissolves=[4 * S])
     assert track.find("transitionitem") is None
     assert [c.findtext("start") for c in track.findall("clipitem")] == ["0", "100"]
+
+
+def test_light_overlay_is_screen_mode_with_opacity_on_v2():
+    files = {**CLIP, -2: FileRef("/x/export/overlays/lines.mp4", 3 * S, 25.0, 1920, 1080, True, 0)}
+    items = [
+        Item("V1", 3, 0, 4 * S, 0, 4 * S),
+        Item("V2", -2, 0, 3 * S, S, 4 * S, 1.0, "screen", 0.8),
+    ]
+    seq = _parse(sequence_xml("SDE", items, files, 25.0, 1920, 1080)).find("sequence")
+    v1, v2 = seq.findall("media/video/track")
+    (light,) = v2.findall("clipitem")
+    assert light.findtext("compositemode") == "screen"
+    assert light.find("filter/effect/effectid").text == "opacity"
+    assert light.find("filter/effect/parameter/value").text == "80"
+    assert v1.find("clipitem/compositemode") is None  # V1 stays normal

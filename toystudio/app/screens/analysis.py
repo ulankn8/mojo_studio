@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 from toystudio.app.i18n import current_language
 from toystudio.app.platform.notify import Notifier
 from toystudio.app.theme.apply import set_variant, token
-from toystudio.app.viewmodels.analysis_vm import AnalysisVM, DraftKind, FeedItem
+from toystudio.app.viewmodels.analysis_vm import CLIP_KINDS, AnalysisVM, DraftKind, FeedItem
 from toystudio.app.widgets.analysis_stage import AnalysisStage
 from toystudio.app.widgets.banner import Banner
 from toystudio.app.widgets.clock_dialog import SKIPPED, ClockDialog
@@ -178,6 +178,10 @@ class AnalysisScreen(QWidget):
         set_variant(self.open_folder_button, "variant", "ghost")
         draft_row.addWidget(self.open_folder_button)
         panel.addLayout(draft_row)
+        self.effects_check = QCheckBox()
+        self.effects_check.setChecked(vm.effects)
+        self.effects_check.toggled.connect(lambda on: setattr(vm, "effects", on))
+        panel.addWidget(self.effects_check)
         self.draft_label = QLabel()
         self.draft_label.setProperty("role", "body")
         self.draft_label.setWordWrap(True)
@@ -284,6 +288,9 @@ class AnalysisScreen(QWidget):
         set_variant(self.draft_label, "tone", "error" if vm.draft_error else "done")
         self.open_folder_button.setVisible(vm.draft is not None)
         self.render_button.setVisible(vm.can_render or vm.render_busy)
+        clips = any(k in CLIP_KINDS for k in vm.draft_kinds)
+        self.effects_check.setVisible(clips)
+        self.effects_check.setEnabled(not vm.ai_busy and not vm.render_busy)
         self.render_button.setEnabled(not vm.ai_busy)
         self._set_render_text()
         self._offline_note.setVisible(running)
@@ -565,6 +572,11 @@ class AnalysisScreen(QWidget):
         )
         self.open_folder_button.setIcon(icon("folder", token("ink-muted"), 16))
         self._set_render_text()
+        self.effects_check.setText(
+            QCoreApplication.translate(
+                "AnalysisScreen", "Световые эффекты: блики, линии и волны поверх клипа"
+            )
+        )
         self._draft_title.setText(
             QCoreApplication.translate("AnalysisScreen", "Черновики для Premiere")
         )

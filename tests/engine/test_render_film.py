@@ -69,3 +69,28 @@ def test_final_quality_settings_and_proxy_sized_preview():
     assert (preview.width, preview.height) == (960, 540)  # the proxies' size: no stretching
     assert "cas=" not in _shot_filter(it, None, preview, 50)
     assert RenderSettings.uhd().width == 3840
+
+
+@needs_ffmpeg
+def test_light_overlay_brightens_its_moment_and_keeps_the_length(tmp_path):
+    import subprocess
+
+    dark = tmp_path / "dark.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "color=c=0x202020:s=320x180:r=50:d=6", str(dark)], check=True)  # fmt: skip
+    light = tmp_path / "light.mp4"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                    "color=c=0xffc46b:s=320x180:r=25:d=2", str(light)], check=True)  # fmt: skip
+    items = [Item("V1", 1, 0, 4 * S, 0, 4 * S),
+             Item("V2", -1, 0, 2 * S, 2 * S, 4 * S, 1.0, "screen", 0.8)]  # fmt: skip
+    out = render_film(items, {1: dark, -1: light}, {1: 6 * S}, tmp_path / "lit.mp4",
+                      fade=False, settings=SMALL)  # fmt: skip
+    assert abs(probe_media(out).duration_us - 4 * S) <= 0.1 * S
+
+    def luma(at):
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", str(at), "-i", str(out),
+                              "-frames:v", "1", "-vf", "format=gray", "-f", "rawvideo", "-"],
+                             capture_output=True, check=True).stdout  # fmt: skip
+        return sum(raw) / len(raw)
+
+    assert luma(3.0) > luma(1.0) + 60  # screen-mode light lifts the dark picture

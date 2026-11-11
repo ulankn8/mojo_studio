@@ -137,6 +137,7 @@ class DayDraft:
     stats: DraftStats
     dissolves: tuple[int, ...] = ()  # timeline positions of cuts that cross-dissolve
     fade: bool = False  # from black at the start, to black at the end
+    beat_us: int = 0  # the music's beat in a clip (overlays start on beats)
 
 
 # ---- helpers
@@ -579,8 +580,9 @@ def build_clip(clips: list[DayClip], tracks: list[MusicTrack], kind: ClipKind) -
         return DayDraft(Timeline(), (), tuple(s.kind for s in secs), DraftStats(0, 0, 0, 0))
     shots = _clip_shots(source, target, track, kind, 0)
     music = _music_under(shots, {0: track})
+    beat = track.beat_us if track else FALLBACK_BEAT_US
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), tuple(s.kind for s in secs),
-                    _stats(shots, source, 1), dissolves(shots), True)  # fmt: skip
+                    _stats(shots, source, 1), dissolves(shots), True, beat)  # fmt: skip
 
 
 def day_layout(draft: DayDraft) -> list[Item]:

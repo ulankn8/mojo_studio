@@ -138,4 +138,4 @@ def build_from_plan(
     music = _music_under(shots, {0: track})
     source = [by_id[i] for i in {s.media_id for s in shots}]
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), ("love",),
-                    _stats(shots, source, 1), dissolves(shots), True)  # fmt: skip
+                    _stats(shots, source, 1), dissolves(shots), True, beat)  # fmt: skip

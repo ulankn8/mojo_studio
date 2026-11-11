@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import shutil
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -39,7 +40,11 @@ from toystudio.engine.edit.day import (
     slow_track,
 )
 from toystudio.engine.edit.love import build_from_plan
-from toystudio.engine.export.premiere_xml import write_sequence
+from toystudio.engine.edit.overlays import OVERLAYS
+from toystudio.engine.edit.overlays import asset as overlay_asset
+from toystudio.engine.edit.overlays import place as place_overlays
+from toystudio.engine.edit.restaurant import Item
+from toystudio.engine.export.premiere_xml import FileRef, write_sequence
 from toystudio.engine.media.probe import check_integrity, probe_media
 from toystudio.engine.media.thumbs import average_hash, frame_at, small_rgb
 from toystudio.engine.render.film import RenderSettings, render_film
@@ -295,8 +300,27 @@ def _built(store: ProjectStore, kind: DayKind, skip_clocks: bool, ai_plan: AiPla
     return _Built(draft, titles, media)
 
 
+def _overlay_refs(export_dir: Path, items: list[Item]) -> dict[int, FileRef]:
+    """The light overlays a layout uses, copied next to the XML so the project travels."""
+    refs: dict[int, FileRef] = {}
+    for mid in {i.media_id for i in items if i.media_id < 0}:
+        src = overlay_asset(mid)
+        dst = export_dir / "overlays" / src.name
+        if not dst.is_file():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dst)
+        length = next(n for i, n in OVERLAYS.values() if i == mid)
+        refs[mid] = FileRef(str(dst), length, 25.0, 1920, 1080, True, 0)
+    return refs
+
+
 def build_day_draft(
-    root: Path, kind: DayKind, *, skip_clocks: bool = False, ai_plan: AiPlan | None = None
+    root: Path,
+    kind: DayKind,
+    *,
+    skip_clocks: bool = False,
+    ai_plan: AiPlan | None = None,
+    effects: bool = True,
 ) -> DraftResult:
     """A draft for Premiere; with `ai_plan` the love story follows the AI director's plan.
     Clips (SDE, express, love story) also get the look LUT next to the XML."""
@@ -311,10 +335,11 @@ def build_day_draft(
                                             default=str), encoding="utf-8")  # fmt: skip
         cut_id = store.create_cut(title, "16:9", draft.stats.duration_us)
         store.save_timeline(cut_id, draft.timeline)
-        items = day_layout(draft)
+        items = day_layout(draft) + (place_overlays(draft) if effects else [])
         files = file_refs(store.list_media(), {i.media_id for i in items})
         lead = _lead(b.media)
         xml, name = export_path(root, store, suffix)
+        files |= _overlay_refs(xml.parent, items)
         clip = draft.fade  # SDE / express / love story: 25p, dissolves, the look
         write_sequence(xml, name, items, files, CLIP_FPS if clip else lead.fps, lead.width,
                        lead.height, dissolves=draft.dissolves, fade=draft.fade)  # fmt: skip
@@ -379,6 +404,7 @@ def render_draft(
     *,
     preview: bool = False,
     skip_clocks: bool = True,
+    effects: bool = True,
     on_progress: Callable[[float], None] = lambda _p: None,
     should_stop: Callable[[], bool] = lambda: False,
 ) -> RenderResult:
@@ -390,6 +416,7 @@ def render_draft(
         if kind == "sde_ai" and plan is None:
             raise DraftError("no_plan")
         b = _built(store, "sde" if kind == "sde_ai" else kind, skip_clocks, plan)
+        lights = place_overlays(b.draft) if effects else []
         items = day_layout(b.draft)
         rows = {m.id: m for m in store.list_media()}
         used = {i.media_id for i in items}
@@ -415,7 +442,8 @@ def render_draft(
         xml, _ = export_path(root, store, b.titles[1])
         out = xml.with_suffix(".mp4") if not preview else xml.with_name(xml.stem + " · превью.mp4")
         settings = RenderSettings.preview() if preview else RenderSettings()
-        video = render_film(items, sources, durations, out, luts=luts,
+        sources |= {i.media_id: overlay_asset(i.media_id) for i in lights}
+        video = render_film(items + lights, sources, durations, out, luts=luts,
                             dissolves=b.draft.dissolves, fade=b.draft.fade, settings=settings,
                             work=cache / "render", on_progress=on_progress,
                             should_stop=should_stop)  # fmt: skip

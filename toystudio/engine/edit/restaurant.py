@@ -351,6 +351,8 @@ class Item:
     start: int  # position in the sequence
     end: int
     speed: float = 1.0  # 0.5: slow motion, the source window is half the sequence length
+    blend: str = ""  # "screen": a light overlay (black disappears, light adds)
+    opacity: float = 1.0
 
 
 def joins(

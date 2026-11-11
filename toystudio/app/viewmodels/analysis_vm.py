@@ -126,11 +126,11 @@ class _AiTask(QObject, QRunnable):
 
     done = Signal(object, object, object)  # DraftResult | None, AiPlan | None, error | None
 
-    def __init__(self, root: Path, skip_clocks: bool) -> None:
+    def __init__(self, root: Path, skip_clocks: bool, effects: bool = True) -> None:
         QObject.__init__(self)
         QRunnable.__init__(self)
         self.setAutoDelete(False)  # the VM keeps it until `done` is handled
-        self.root, self.skip_clocks = root, skip_clocks
+        self.root, self.skip_clocks, self.effects = root, skip_clocks, effects
 
     def run(self) -> None:
         try:
@@ -138,7 +138,7 @@ class _AiTask(QObject, QRunnable):
             plan = plan_love_story(
                 inp.clips, tempo=inp.tempo, beat_us=inp.beat_us, target_us=inp.target_us
             )
-            result = build_day_draft(self.root, "sde", ai_plan=plan)
+            result = build_day_draft(self.root, "sde", ai_plan=plan, effects=self.effects)
         except DraftError as e:
             self.done.emit(None, None, e.code)
         except DirectorError as e:
@@ -158,17 +158,18 @@ class _RenderTask(QObject, QRunnable):
     progress = Signal(float)
     done = Signal(object, object)  # RenderResult | None, error code | None
 
-    def __init__(self, root: Path, kind: DraftKind, skip_clocks: bool) -> None:
+    def __init__(self, root: Path, kind: DraftKind, skip_clocks: bool, effects: bool) -> None:
         QObject.__init__(self)
         QRunnable.__init__(self)
         self.setAutoDelete(False)
-        self.root, self.kind, self.skip_clocks = root, kind, skip_clocks
+        self.root, self.kind, self.skip_clocks, self.effects = root, kind, skip_clocks, effects
         self.stop = False
 
     def run(self) -> None:
         try:
             result = render_draft(self.root, self.kind,  # type: ignore[arg-type]
-                                  skip_clocks=self.skip_clocks, on_progress=self.progress.emit,
+                                  skip_clocks=self.skip_clocks, effects=self.effects,
+                                  on_progress=self.progress.emit,
                                   should_stop=lambda: self.stop)  # fmt: skip
         except RenderStopped:
             self.done.emit(None, None)
@@ -257,6 +258,7 @@ class AnalysisVM(QObject):
         self.render_result: RenderResult | None = None
         self.render_error: str | None = None
         self._render_task: _RenderTask | None = None
+        self.effects = True  # light overlays (waves, lines, leaks) on clips
         jobs.progress.connect(self._on_progress)
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_finished)
@@ -303,7 +305,7 @@ class AnalysisVM(QObject):
             return
         self.render_busy, self.render_percent = True, 0
         self.render_result, self.render_error = None, None
-        self._render_task = _RenderTask(self.root, self.draft_kind, self._skip_clocks)
+        self._render_task = _RenderTask(self.root, self.draft_kind, self._skip_clocks, self.effects)
         self._render_task.progress.connect(self._on_render_progress)
         self._render_task.done.connect(self._on_render_done)
         QThreadPool.globalInstance().start(self._render_task)
@@ -347,7 +349,7 @@ class AnalysisVM(QObject):
         self._new_draft("sde_ai", skip_clocks)
         self.draft, self.draft_error, self.ai_plan = None, None, None
         self.ai_busy = True
-        self._ai_task = _AiTask(self.root, skip_clocks)
+        self._ai_task = _AiTask(self.root, skip_clocks, self.effects)
         self._ai_task.done.connect(self._on_ai_done)
         QThreadPool.globalInstance().start(self._ai_task)
         self.changed.emit()
@@ -370,7 +372,9 @@ class AnalysisVM(QObject):
             if kind == "restaurant":
                 result = build_draft(self.root)
             else:
-                result = build_day_draft(self.root, kind, skip_clocks=skip_clocks)
+                result = build_day_draft(
+                    self.root, kind, skip_clocks=skip_clocks, effects=self.effects
+                )
             self.draft, self.draft_error = result, None
         except DraftError as e:
             self.draft, self.draft_error = None, e.code

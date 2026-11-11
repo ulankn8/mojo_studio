@@ -135,6 +135,9 @@ def sequence_xml(
         _text(ci, "out", src_out)
         ci.append(_file(it.media_id, f, fr, full=it.media_id not in described))
         described.add(it.media_id)
+        if kind == "video" and it.blend:  # a light overlay: screen mode, its own opacity
+            _text(ci, "compositemode", it.blend)
+            ci.append(_opacity(it.opacity))
         if kind == "video" and it.speed != 1.0:
             ci.append(_time_remap(it.speed))
         if kind == "audio":
@@ -195,6 +198,22 @@ def sequence_xml(
     ET.indent(root)
     body = ET.tostring(root, encoding="unicode")
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n' + body + "\n"
+
+
+def _opacity(opacity: float) -> ET.Element:
+    flt = ET.Element("filter")
+    effect = ET.SubElement(flt, "effect")
+    for tag, value in (("name", "Opacity"), ("effectid", "opacity"),
+                       ("effectcategory", "motion"), ("effecttype", "motion"),
+                       ("mediatype", "video")):  # fmt: skip
+        _text(effect, tag, value)
+    par = ET.SubElement(effect, "parameter")
+    _text(par, "parameterid", "opacity")
+    _text(par, "name", "Opacity")
+    _text(par, "valuemin", 0)
+    _text(par, "valuemax", 100)
+    _text(par, "value", f"{opacity * 100:g}")
+    return flt
 
 
 def _time_remap(speed: float) -> ET.Element:

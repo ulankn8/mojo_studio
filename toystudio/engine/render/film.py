@@ -172,6 +172,21 @@ def render_film(
                      f":offset={offset:.4f}[x{n}]")  # fmt: skip
         last = f"[x{n}]"
         length += run_files[n][1] - 2 * hf
+    lights = [i for i in items if i.track == "V2" and i.blend == "screen"]
+    first_light = len(run_files)
+    if lights:  # light overlays: one black "light track", laid over the film in screen mode
+        w, h = st.width, st.height
+        graph.append(f"color=black:s={w}x{h}:r={st.fps}:d={total / st.fps:.4f},format=gbrp[l0]")
+        for n, it in enumerate(lights):
+            o = it.opacity
+            graph.append(f"[{first_light + n}:v]trim=duration={(it.end - it.start) / US_PER_S:.4f},"
+                         f"setpts=PTS-STARTPTS+{it.start / US_PER_S:.4f}/TB,"
+                         f"scale={w}:{h},format=gbrp,colorchannelmixer=rr={o:g}:gg={o:g}:bb={o:g}"
+                         f"[o{n}]")  # fmt: skip
+            graph.append(f"[l{n}][o{n}]overlay=eof_action=pass:format=gbrp[l{n + 1}]")
+        graph.append(f"{last}format=gbrp[base]")
+        graph.append(f"[base][l{len(lights)}]blend=all_mode=screen,format=yuv420p[lit]")
+        last = "[lit]"
     fades = f"trim=end_frame={total}"
     if fade:
         fd = FADE_US / US_PER_S
@@ -180,7 +195,9 @@ def render_film(
     inputs: list[str] = []
     for path, _ in run_files:
         inputs += ["-i", str(path)]
-    audio_graph, audio_inputs = _audio(items, sources, len(run_files), total / st.fps)
+    for it in lights:
+        inputs += ["-i", str(sources[it.media_id])]
+    audio_graph, audio_inputs = _audio(items, sources, first_light + len(lights), total / st.fps)
     tmp = out.with_name(out.stem + ".part" + out.suffix)
     _run([*inputs, *audio_inputs, "-filter_complex", ";".join(graph + audio_graph),
           "-map", "[v]", *(["-map", "[a]"] if audio_graph else []),
