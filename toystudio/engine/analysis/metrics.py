@@ -49,8 +49,8 @@ def frame_motion(prev: np.ndarray, cur: np.ndarray) -> float:
     return float(np.abs(cur.astype(np.int16) - prev.astype(np.int16)).mean()) / 255.0
 
 
-def phase_shift(prev: np.ndarray, cur: np.ndarray) -> float:
-    """Camera shake: length (px) of the integer shift found by phase correlation."""
+def phase_shift_xy(prev: np.ndarray, cur: np.ndarray) -> tuple[int, int]:
+    """Integer (dx, dy) of the picture between two gray frames, by phase correlation."""
     a = np.fft.fft2(prev.astype(np.float32))
     b = np.fft.fft2(cur.astype(np.float32))
     cross = a * np.conj(b)
@@ -60,6 +60,12 @@ def phase_shift(prev: np.ndarray, cur: np.ndarray) -> float:
     h, w = corr.shape
     dy = iy - h if iy > h // 2 else iy
     dx = ix - w if ix > w // 2 else ix
+    return int(dx), int(dy)
+
+
+def phase_shift(prev: np.ndarray, cur: np.ndarray) -> float:
+    """Camera shake: length (px) of the integer shift found by phase correlation."""
+    dx, dy = phase_shift_xy(prev, cur)
     return float(np.hypot(dx, dy))
 
 

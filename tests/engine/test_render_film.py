@@ -56,3 +56,16 @@ def test_nothing_to_render(tmp_path):
 
     with pytest.raises(ValueError):
         render_film([], {}, {}, tmp_path / "x.mp4")
+
+
+def test_final_quality_settings_and_proxy_sized_preview():
+    from toystudio.engine.render.film import _shot_filter
+
+    it = Item("V1", 1, 0, 2 * S, 0, 2 * S)
+    final = _shot_filter(it, None, RenderSettings(), 50)
+    assert "flags=lanczos" in final and "cas=strength=0.35" in final
+    assert RenderSettings().crf <= 16 and RenderSettings().preset == "slow"
+    preview = RenderSettings.preview()
+    assert (preview.width, preview.height) == (960, 540)  # the proxies' size: no stretching
+    assert "cas=" not in _shot_filter(it, None, preview, 50)
+    assert RenderSettings.uhd().width == 3840

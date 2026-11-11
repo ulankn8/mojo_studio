@@ -13,7 +13,7 @@ import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from toystudio.core.models import US_PER_S
@@ -34,14 +34,22 @@ class RenderSettings:
     width: int = 1920
     height: int = 1080
     fps: int = 25
-    crf: int = 18
-    preset: str = "medium"
+    crf: int = 16
+    preset: str = "slow"
     vignette: bool = True
     letterbox: bool = False  # 2.39:1 bars
+    sharpen: float = 0.35  # contrast-adaptive sharpening after the scale (0: off)
+    audio_kbps: int = 320
 
     @staticmethod
     def preview() -> RenderSettings:
-        return RenderSettings(1280, 720, 25, 23, "veryfast")
+        """The proxies' own size (960x540): nothing stretched, quick to encode."""
+        return RenderSettings(960, 540, 25, 20, "veryfast", sharpen=0.0, audio_kbps=192)
+
+    @staticmethod
+    def uhd() -> RenderSettings:
+        """3840x2160 for 4K sources."""
+        return RenderSettings(3840, 2160)
 
 
 def _run(args: list[str]) -> None:
@@ -63,8 +71,10 @@ def _shot_filter(it: Item, lut: Path | None, st: RenderSettings, frames: int) ->
     parts = [f"setpts=(PTS-STARTPTS)/{it.speed:g}"]
     if lut is not None:
         parts.append(f"lut3d=file={_lut_path(lut)}")
-    parts += [f"scale={w}:{h}:force_original_aspect_ratio=increase", f"crop={w}:{h}",
-              "setsar=1", f"fps={st.fps}"]  # fmt: skip
+    parts += [f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos",
+              f"crop={w}:{h}", "setsar=1", f"fps={st.fps}"]  # fmt: skip
+    if st.sharpen:
+        parts.append(f"cas=strength={st.sharpen:g}")
     if st.vignette:
         parts.append("vignette=angle=PI/7:eval=init")
     if st.letterbox:
@@ -97,6 +107,8 @@ def render_film(
     work = work or out.with_name(out.stem + ".parts")
     work.mkdir(parents=True, exist_ok=True)
     luts = luts if luts and has_filter("lut3d") else {}
+    if st.sharpen and not has_filter("cas"):
+        st = replace(st, sharpen=0.0)
     xfade = has_filter("xfade")
     half = DISSOLVE_US // 2
     joined = joins(shots, durations, dissolves, half) if xfade else [False] * (len(shots) - 1)
@@ -118,7 +130,9 @@ def render_film(
         _run(["-ss", f"{max(src_in, 0) / US_PER_S:.4f}", "-t", f"{src_len / US_PER_S:.4f}",
               "-i", str(sources[it.media_id]), "-an",
               "-vf", _shot_filter(it, luts.get(it.media_id), st, frames),
-              "-c:v", "libx264", "-preset", st.preset, "-crf", str(st.crf), "-threads", "2",
+              # pieces near-lossless and fast: the final pass is the only real compression
+              "-c:v", "libx264", "-preset", "veryfast", "-crf", str(max(st.crf - 8, 4)),
+              "-threads", "2", "-pix_fmt", "yuv420p",
               "-r", str(st.fps), str(piece)])  # fmt: skip
         return piece
 
@@ -171,7 +185,8 @@ def render_film(
     _run([*inputs, *audio_inputs, "-filter_complex", ";".join(graph + audio_graph),
           "-map", "[v]", *(["-map", "[a]"] if audio_graph else []),
           "-c:v", "libx264", "-preset", st.preset, "-crf", str(st.crf), "-r", str(st.fps),
-          "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", str(tmp)])  # fmt: skip
+          "-profile:v", "high", "-pix_fmt", "yuv420p", "-c:a", "aac",
+          "-b:a", f"{st.audio_kbps}k", "-movflags", "+faststart", str(tmp)])  # fmt: skip
     os.replace(tmp, out)
     for p in work.iterdir():
         p.unlink()

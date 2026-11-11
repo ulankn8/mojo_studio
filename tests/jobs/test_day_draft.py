@@ -242,3 +242,24 @@ def test_render_without_files_or_plan_explains(tmp_path):
     with pytest.raises(DraftError) as e:
         render_draft(root, "express")  # neither the originals nor proxies exist
     assert e.value.code == "missing_files"
+
+
+@needs_ffmpeg
+def test_love_story_avoids_hand_shake_measured_on_the_proxy(tmp_path):
+    import numpy as np
+
+    from toystudio.engine.analysis.single_pass import outputs_for
+    from toystudio.jobs.day_draft import _shaky
+
+    root = _project(tmp_path, drone_hours_off=0)
+    s = ProjectStore.open(root)
+    try:
+        mid = s.list_media()[0].id
+        make_clip(outputs_for(root / "cache", mid).proxy, duration_s=3, fps=50, size="320x180")
+        first = _shaky(s, {mid})
+        cached = root / "cache" / "jitter" / f"{mid}.npz"
+        assert cached.is_file() and first[mid] == []  # the test pattern scrolls smoothly
+        np.savez(cached, values=np.full(150, 3.0), fps=50.0)  # pretend the hand trembled
+        assert _shaky(s, {mid})[mid] == [(0, 3_000_000)]  # read from the cache, not decoded
+    finally:
+        s.close()

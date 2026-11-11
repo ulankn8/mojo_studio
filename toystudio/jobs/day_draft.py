@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -21,6 +21,7 @@ from toystudio.core.ai_plan import AiClip, AiPlan, AiShot
 from toystudio.core.clock import camera_spans, reference_camera, shot_time, suspicious
 from toystudio.core.models import AudioLabel, MediaInfo, MediaRole, MediaRow, MediaStatus
 from toystudio.engine.analysis import single_pass
+from toystudio.engine.analysis.jitter import jitter, shaky_spans
 from toystudio.engine.analysis.single_pass import outputs_for
 from toystudio.engine.audio.beats import CONFIDENT, beats_from_envelope
 from toystudio.engine.color.grade import LOOK_NAME, balance, chroma, film_chroma, write_cube
@@ -164,6 +165,10 @@ def _day_clips(store: ProjectStore, media: list[MediaRow], skip_clocks: bool) ->
     ]
 
 
+def _share(spans: tuple[tuple[int, int], ...], duration: int) -> float:
+    return sum(b - a for a, b in spans) / duration if duration else 0.0
+
+
 def _flags(store: ProjectStore, m: MediaRow) -> tuple[str, ...]:
     dur = m.info.duration_us if m.info else 0
     share: dict[str, int] = {}
@@ -171,6 +176,39 @@ def _flags(store: ProjectStore, m: MediaRow) -> tuple[str, ...]:
         share[q.label.value] = share.get(q.label.value, 0) + q.end_us - q.start_us
     return tuple(_FLAG_TEXT[k] for k, v in sorted(share.items())
                  if k in _FLAG_TEXT and dur and v / dur >= AI_FLAG_SHARE)  # fmt: skip
+
+
+def _shaky(store: ProjectStore, ids: set[int]) -> dict[int, list[tuple[int, int]]]:
+    """Hand-shake stretches of the clips, measured at the full frame rate on the proxy
+    (cached: cache/jitter/{id}.npz); a clip without a proxy is not measured."""
+    cache = store.root / "cache"
+    rows = {m.id: m for m in store.list_media() if m.id in ids}
+    out: dict[int, list[tuple[int, int]]] = {}
+    for mid, m in rows.items():
+        saved = cache / "jitter" / f"{mid}.npz"
+        fps = min(m.info.fps if m.info and m.info.fps else 25.0, 50.0)
+        if saved.is_file():
+            data = np.load(saved)
+            values, fps = data["values"], float(data["fps"])
+        else:
+            proxy = outputs_for(cache, mid).proxy
+            if not proxy.is_file():
+                continue
+            try:
+                values = jitter(proxy, fps)
+            except RuntimeError:
+                continue
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(saved, values=values, fps=fps)
+        out[mid] = shaky_spans(values, fps)
+    return out
+
+
+def _steady(store: ProjectStore, clips: list[DayClip], ids: set[int]) -> list[DayClip]:
+    """`clips` with the hand-shake stretches of `ids` among their bad frames."""
+    spans = _shaky(store, ids)
+    return [replace(c, bad=c.bad + tuple(spans[c.media_id])) if spans.get(c.media_id) else c
+            for c in clips]  # fmt: skip
 
 
 def _ai_frame(cache: Path, media_id: int, at: float) -> Path:
@@ -197,6 +235,7 @@ def love_inputs(root: Path, *, skip_clocks: bool = False) -> LoveInputs:
         if not media:
             raise DraftError("nothing_to_keep")
         clips = _day_clips(store, media, skip_clocks)
+        clips = _steady(store, clips, {c.media_id for c in love_source(clips)})
         rows = {m.id: m for m in media}
         cache = store.root / "cache"
         ai_clips: list[AiClip] = []
@@ -212,8 +251,11 @@ def love_inputs(root: Path, *, skip_clocks: bool = False) -> LoveInputs:
                     frames.append(out)
             if frames:
                 info = rows[c.media_id].info
-                ai_clips.append(AiClip(c.media_id, c.duration, _flags(store, rows[c.media_id]),
-                                       tuple(frames), info.fps if info else 0.0))  # fmt: skip
+                flags = _flags(store, rows[c.media_id])
+                if _share(c.bad, c.duration) >= AI_FLAG_SHARE and "трясётся" not in flags:
+                    flags = (*flags, "трясётся")
+                ai_clips.append(AiClip(c.media_id, c.duration, flags, tuple(frames),
+                                       info.fps if info else 0.0))  # fmt: skip
         track = slow_track(_music(store))
         beat = track.beat_us if track else FALLBACK_BEAT_US
         tempo = track.beats.tempo if track and track.beats.confidence >= CONFIDENT else 0.0
@@ -235,6 +277,8 @@ def _built(store: ProjectStore, kind: DayKind, skip_clocks: bool, ai_plan: AiPla
         raise DraftError("nothing_to_keep")
     clips = _day_clips(store, media, skip_clocks)
     tracks = _music(store)
+    if ai_plan is not None or kind == "sde":
+        clips = _steady(store, clips, {c.media_id for c in love_source(clips)})
     if ai_plan is not None:
         seen = looks(store.root / "cache", {s.clip_id for s in ai_plan.shots})
         draft = build_from_plan(ai_plan, clips, slow_track(tracks), SDE_US, seen)
@@ -243,6 +287,9 @@ def _built(store: ProjectStore, kind: DayKind, skip_clocks: bool, ai_plan: AiPla
         draft, titles = build_film(clips, tracks), _TITLES[kind]
     else:
         draft, titles = build_clip(clips, tracks, kind), _TITLES[kind]
+        if kind == "express":  # too many clips to measure all: measure the chosen, rebuild
+            clips = _steady(store, clips, {s.media_id for s in draft.shots})
+            draft = build_clip(clips, tracks, kind)
     if not draft.shots:
         raise DraftError("nothing_to_keep")
     return _Built(draft, titles, media)

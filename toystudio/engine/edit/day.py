@@ -41,7 +41,7 @@ DRONE_ENTRY_US = 3_800_000  # rule 9
 STAB_ENTRY = 0.39
 LOVE_MIN_CLIPS = 20
 LOVE_MAX_MEDIAN_US = 12 * S
-BAD_MAX = 0.3
+BAD_MAX = 0.05  # of a shot: a second of shake in a 2 s shot is what a viewer sees
 SLOW = 0.5  # slow motion: 50 fps footage on a 25 fps timeline, every frame shown
 SLOW_MIN_FPS = 47.0  # 50 / 59.94 / 100 fps; slower footage stays at real speed
 LOOP_MIN_US = 8 * S  # a track starts over only for this much more: a second of its intro jars
@@ -160,15 +160,19 @@ def _bad_share(c: DayClip, a: int, b: int) -> float:
 
 
 def _good_start(c: DayClip, at: int, length: int) -> int | None:
-    """`at`, or the next start in the clip whose window is mostly free of bad frames."""
+    """`at` when its window is clean, else the nearest clean start: just after a bad stretch,
+    just before one, or further on in steps - later in the clip first (keeps the story's
+    order), then earlier. None when no window of `length` in the clip is clean."""
+    hi = c.duration - length
+    if hi < 0:
+        return None
+    at = min(max(0, at), hi)
     step = max(length // 2, 200_000)
-    t = max(0, at)
-    while t + length <= c.duration:
-        if _bad_share(c, t, t + length) < BAD_MAX:
-            return t
-        t += step
-    t = max(0, min(at, c.duration - length))
-    return t if t + length <= c.duration and _bad_share(c, t, t + length) < BAD_MAX else None
+    starts = {at, *range(at, hi + 1, step), *range(at, -1, -step)}
+    for s, e in c.bad:
+        starts |= {min(e, hi), max(0, s - length)}
+    clean = [t for t in starts if 0 <= t <= hi and _bad_share(c, t, t + length) <= BAD_MAX]
+    return min(clean, key=lambda t: (t < at, abs(t - at))) if clean else None
 
 
 def _spread(clips: list[DayClip], n: int) -> list[DayClip]:
