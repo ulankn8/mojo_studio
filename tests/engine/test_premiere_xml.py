@@ -85,3 +85,52 @@ def test_write_is_atomic(tmp_path):
     write_sequence(out, "x", ITEMS, FILES, 50.0, 1920, 1080)
     assert out.is_file() and not out.with_name(out.name + ".tmp").exists()
     _parse(out.read_text("utf-8"))
+
+
+# --- slow motion and dissolves
+
+
+CLIP = {
+    3: FileRef("/v/C0157.MP4", 60 * S, 50.0, 1920, 1080, True, 2),
+    4: FileRef("/v/C0158.MP4", 60 * S, 50.0, 1920, 1080, True, 2),
+}
+
+
+def _v1(items, **kw):
+    seq = _parse(sequence_xml("SDE", items, CLIP, 25.0, 1920, 1080, **kw)).find("sequence")
+    return seq.find("media/video/track")
+
+
+def test_slow_motion_is_a_time_remap_with_half_the_source():
+    track = _v1(
+        [Item("V1", 3, 10 * S, 12 * S, 0, 4 * S, 0.5), Item("V1", 4, 0, 2 * S, 4 * S, 6 * S)]
+    )
+    slow, normal = track.findall("clipitem")
+    assert [slow.findtext(k) for k in ("start", "end", "in", "out")] == ["0", "100", "250", "300"]
+    effect = slow.find("filter/effect")
+    assert effect.findtext("effectid") == "timeremap"
+    speed = next(p for p in effect.findall("parameter") if p.findtext("parameterid") == "speed")
+    assert speed.findtext("value") == "50"
+    assert normal.find("filter") is None  # real speed: no filter at all
+
+
+def test_dissolve_reaches_into_both_handles_and_fades_from_and_to_black():
+    items = [Item("V1", 3, 10 * S, 14 * S, 0, 4 * S), Item("V1", 4, 20 * S, 24 * S, 4 * S, 8 * S)]
+    track = _v1(items, dissolves=[4 * S], fade=True)
+    kinds = [el.tag for el in track]
+    assert kinds == ["transitionitem", "clipitem", "transitionitem", "clipitem", "transitionitem"]
+    fade_in, mid, fade_out = track.findall("transitionitem")
+    assert [mid.findtext(k) for k in ("start", "end", "alignment")] == ["94", "106", "center"]
+    assert mid.findtext("effect/effectid") == "Cross Dissolve"
+    assert fade_in.findtext("alignment") == "start-black" and fade_in.findtext("start") == "0"
+    assert fade_out.findtext("alignment") == "end-black" and fade_out.findtext("end") == "200"
+    a, b = track.findall("clipitem")
+    assert [a.findtext(k) for k in ("start", "end", "in", "out")] == ["-1", "-1", "250", "356"]
+    assert [b.findtext(k) for k in ("start", "end", "in", "out")] == ["-1", "-1", "494", "600"]
+
+
+def test_dissolve_without_handles_stays_a_cut():
+    items = [Item("V1", 3, 56 * S, 60 * S, 0, 4 * S), Item("V1", 4, 0, 4 * S, 4 * S, 8 * S)]
+    track = _v1(items, dissolves=[4 * S])
+    assert track.find("transitionitem") is None
+    assert [c.findtext("start") for c in track.findall("clipitem")] == ["0", "100"]

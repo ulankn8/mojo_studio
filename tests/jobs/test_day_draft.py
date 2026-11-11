@@ -123,7 +123,7 @@ def test_love_inputs_make_small_frames_and_flags(tmp_path):
     inp = love_inputs(root)
     assert inp.clips and inp.target_us == 88 * S and inp.beat_us == 600_000
     first = inp.clips[0]
-    assert len(first.frames) == 2 and all(f.is_file() for f in first.frames)
+    assert len(first.frames) == 3 and first.fps == 50.0 and all(f.is_file() for f in first.frames)
     assert probe_media(first.frames[0]).width == 320
     flagged = {c.id: c.flags for c in inp.clips}
     assert flagged.get(shaky) == ("трясётся",)
@@ -146,3 +146,99 @@ def test_draft_from_an_ai_plan(tmp_path):
     assert r.stats.duration_us == 18 * S + (10 * S - 4_800_000)
     saved = json.loads((root / "cache" / "ai" / "love_plan.json").read_text("utf-8"))
     assert saved["story"] == "Кортеж и встреча" and len(saved["shots"]) == 10
+
+
+def test_clip_drafts_are_25p_with_dissolves_and_fades(tmp_path):
+    root = _project(tmp_path, drone_hours_off=0)
+    r = build_day_draft(root, "express")
+    seq = ET.fromstring(r.xml_path.read_text("utf-8").split("\n", 2)[2]).find("sequence")
+    assert seq.findtext("rate/timebase") == "25"  # 50 fps footage slows down cleanly on it
+    aligns = [t.findtext("alignment") for t in seq.iter("transitionitem")]
+    assert aligns[0] == "start-black" and aligns[-1] == "end-black"
+    film = build_day_draft(root, "film")
+    seq = ET.fromstring(film.xml_path.read_text("utf-8").split("\n", 2)[2]).find("sequence")
+    assert seq.findtext("rate/timebase") == "50" and seq.find(".//transitionitem") is None
+
+
+@needs_ffmpeg
+def test_average_hash_tells_scenes_apart(tmp_path):
+    import subprocess
+
+    from toystudio.engine.media.thumbs import average_hash
+
+    def still(name, source):
+        out = tmp_path / name
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", source,
+                        "-frames:v", "1", str(out)], check=True)  # fmt: skip
+        return average_hash(out)
+
+    a = still("a.jpg", "testsrc2=size=320x180")
+    b = still("b.jpg", "testsrc2=size=320x180,eq=brightness=0.05")
+    c = still("c.jpg", "mandelbrot=size=320x180")
+    assert (a ^ b).bit_count() <= 10 < (a ^ c).bit_count()
+
+
+# --- the look LUT, the saved plan, the finished video
+
+
+def test_clip_draft_puts_the_look_next_to_the_xml(tmp_path):
+    root = _project(tmp_path, drone_hours_off=0)
+    r = build_day_draft(root, "express")
+    cube = r.xml_path.parent / "T-Studio Тёплое кино.cube"
+    assert cube.is_file() and "LUT_3D_SIZE 33" in cube.read_text("utf-8")
+
+
+def test_saved_plan_round_trip(tmp_path):
+    from toystudio.core.ai_plan import AiPlan, AiShot
+    from toystudio.jobs.day_draft import saved_plan
+
+    root = _project(tmp_path, drone_hours_off=0)
+    assert saved_plan(root) is None
+    s = ProjectStore.open(root)
+    try:
+        ids = [m.id for m in s.list_media()][2:6]
+    finally:
+        s.close()
+    plan = AiPlan("Кортеж", tuple(AiShot(i, 30.0, 3, "development", "кортеж", i % 2 == 0)
+                                  for i in ids), "claude-opus-5-5", 100, 50, 4)  # fmt: skip
+    build_day_draft(root, "sde", ai_plan=plan)
+    assert saved_plan(root) == plan
+
+
+@needs_ffmpeg
+def test_render_preview_from_proxies(tmp_path, monkeypatch):
+    from toystudio.engine.analysis.single_pass import outputs_for
+    from toystudio.engine.render.film import RenderSettings
+    from toystudio.jobs.day_draft import render_draft
+
+    small = RenderSettings(320, 180, 25, 35, "ultrafast", vignette=False)
+    monkeypatch.setattr(RenderSettings, "preview", staticmethod(lambda: small))
+
+    root = _project(tmp_path, drone_hours_off=0)
+    s = ProjectStore.open(root)
+    try:
+        for m in s.list_media():
+            secs = m.info.duration_us / 1_000_000
+            make_clip(outputs_for(root / "cache", m.id).proxy, duration_s=secs, fps=50,
+                      size="320x180", audio=False)  # fmt: skip
+    finally:
+        s.close()
+    seen: list[float] = []
+    r = render_draft(root, "sde", preview=True, on_progress=seen.append)
+    assert r.video.name == "Свадьба · love story · превью.mp4" and not r.from_proxy
+    info = probe_media(r.video)
+    assert info.width == 320 and round(info.fps) == 25 and info.duration_us > 60 * 1_000_000
+    assert seen[-1] == 1.0
+    assert list((root / "cache" / "grade").glob("*.cube"))  # every shot's clip has its colour
+
+
+def test_render_without_files_or_plan_explains(tmp_path):
+    from toystudio.jobs.day_draft import render_draft
+
+    root = _project(tmp_path, drone_hours_off=0)
+    with pytest.raises(DraftError) as e:
+        render_draft(root, "sde_ai")
+    assert e.value.code == "no_plan"
+    with pytest.raises(DraftError) as e:
+        render_draft(root, "express")  # neither the originals nor proxies exist
+    assert e.value.code == "missing_files"

@@ -10,22 +10,26 @@ from __future__ import annotations
 
 import contextlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
-from toystudio.core.ai_plan import AiClip, AiPlan
+from toystudio.core.ai_plan import AiClip, AiPlan, AiShot
 from toystudio.core.clock import camera_spans, reference_camera, shot_time, suspicious
-from toystudio.core.models import AudioLabel, MediaRole, MediaRow, MediaStatus
+from toystudio.core.models import AudioLabel, MediaInfo, MediaRole, MediaRow, MediaStatus
 from toystudio.engine.analysis import single_pass
 from toystudio.engine.analysis.single_pass import outputs_for
 from toystudio.engine.audio.beats import CONFIDENT, beats_from_envelope
+from toystudio.engine.color.grade import LOOK_NAME, balance, chroma, film_chroma, write_cube
 from toystudio.engine.edit.day import (
+    CLIP_FPS,
     FALLBACK_BEAT_US,
     SDE_US,
     DayClip,
+    DayDraft,
     MusicTrack,
     build_clip,
     build_film,
@@ -36,7 +40,8 @@ from toystudio.engine.edit.day import (
 from toystudio.engine.edit.love import build_from_plan
 from toystudio.engine.export.premiere_xml import write_sequence
 from toystudio.engine.media.probe import check_integrity, probe_media
-from toystudio.engine.media.thumbs import frame_at
+from toystudio.engine.media.thumbs import average_hash, frame_at, small_rgb
+from toystudio.engine.render.film import RenderSettings, render_film
 from toystudio.jobs.restaurant_draft import DraftError, DraftResult, export_path, file_refs
 from toystudio.storage.project_store import ProjectStore
 
@@ -48,7 +53,8 @@ _TITLES: dict[str, tuple[str, str]] = {  # kind -> (cut title, file suffix)
     "sde_ai": ("Love Story · ИИ", "love story ИИ"),
 }
 AI_FRAME_WIDTH = 320  # 320x180: 84 tokens a frame
-AI_FRAME_AT = (0.3, 0.6)  # two looks into each clip
+AI_FRAME_AT = (0.1, 0.5, 0.9)  # beginning, middle and end: where the best moment is
+PLAN_FILE = "love_plan.json"
 AI_FLAG_SHARE = 0.3  # a clip is «трясётся» when this much of it shakes
 _FLAG_TEXT = {"shaky": "трясётся", "blurry": "размыто", "dark": "темно"}
 
@@ -152,6 +158,7 @@ def _day_clips(store: ProjectStore, media: list[MediaRow], skip_clocks: bool) ->
                 if e.label is AudioLabel.MUSIC
             ),
             tuple((q.start_us, q.end_us) for q in store.quality_intervals(m.id)),
+            m.info.fps if m.info else 0.0,
         )
         for m in media
     ]
@@ -164,6 +171,22 @@ def _flags(store: ProjectStore, m: MediaRow) -> tuple[str, ...]:
         share[q.label.value] = share.get(q.label.value, 0) + q.end_us - q.start_us
     return tuple(_FLAG_TEXT[k] for k, v in sorted(share.items())
                  if k in _FLAG_TEXT and dur and v / dur >= AI_FLAG_SHARE)  # fmt: skip
+
+
+def _ai_frame(cache: Path, media_id: int, at: float) -> Path:
+    return cache / "thumbs" / f"ai{media_id}_{round(at * 100)}.jpg"
+
+
+def looks(cache: Path, ids: set[int]) -> dict[int, int]:
+    """Average hashes of the clips' middle frames (those the AI director saw), for spotting
+    look-alike shots side by side; a clip without a frame is simply not compared."""
+    out: dict[int, int] = {}
+    for i in ids:
+        frame = _ai_frame(cache, i, 0.5)
+        if frame.is_file():
+            with contextlib.suppress(RuntimeError, OSError):
+                out[i] = average_hash(frame)
+    return out
 
 
 def love_inputs(root: Path, *, skip_clocks: bool = False) -> LoveInputs:
@@ -180,17 +203,17 @@ def love_inputs(root: Path, *, skip_clocks: bool = False) -> LoveInputs:
         for c in love_source(clips):
             proxy = outputs_for(cache, c.media_id).proxy
             frames: list[Path] = []
-            for k, at in enumerate(AI_FRAME_AT):
-                out = cache / "thumbs" / f"ai{c.media_id}_{k}.jpg"
+            for at in AI_FRAME_AT:
+                out = _ai_frame(cache, c.media_id, at)
                 if not out.is_file() and proxy.is_file():
                     with contextlib.suppress(RuntimeError, ValueError, OSError):
                         frame_at(proxy, round(c.duration * at), out, AI_FRAME_WIDTH)
                 if out.is_file():
                     frames.append(out)
             if frames:
-                ai_clips.append(
-                    AiClip(c.media_id, c.duration, _flags(store, rows[c.media_id]), tuple(frames))
-                )
+                info = rows[c.media_id].info
+                ai_clips.append(AiClip(c.media_id, c.duration, _flags(store, rows[c.media_id]),
+                                       tuple(frames), info.fps if info else 0.0))  # fmt: skip
         track = slow_track(_music(store))
         beat = track.beat_us if track else FALLBACK_BEAT_US
         tempo = track.beats.tempo if track and track.beats.confidence >= CONFIDENT else 0.0
@@ -199,41 +222,156 @@ def love_inputs(root: Path, *, skip_clocks: bool = False) -> LoveInputs:
         store.close()
 
 
+@dataclass(frozen=True)
+class _Built:
+    draft: DayDraft
+    titles: tuple[str, str]
+    media: list[MediaRow]
+
+
+def _built(store: ProjectStore, kind: DayKind, skip_clocks: bool, ai_plan: AiPlan | None) -> _Built:
+    media = _pre(store)
+    if not media:
+        raise DraftError("nothing_to_keep")
+    clips = _day_clips(store, media, skip_clocks)
+    tracks = _music(store)
+    if ai_plan is not None:
+        seen = looks(store.root / "cache", {s.clip_id for s in ai_plan.shots})
+        draft = build_from_plan(ai_plan, clips, slow_track(tracks), SDE_US, seen)
+        titles = _TITLES["sde_ai"]
+    elif kind == "film":
+        draft, titles = build_film(clips, tracks), _TITLES[kind]
+    else:
+        draft, titles = build_clip(clips, tracks, kind), _TITLES[kind]
+    if not draft.shots:
+        raise DraftError("nothing_to_keep")
+    return _Built(draft, titles, media)
+
+
 def build_day_draft(
     root: Path, kind: DayKind, *, skip_clocks: bool = False, ai_plan: AiPlan | None = None
 ) -> DraftResult:
-    """A draft for Premiere; with `ai_plan` the love story follows the AI director's plan."""
+    """A draft for Premiere; with `ai_plan` the love story follows the AI director's plan.
+    Clips (SDE, express, love story) also get the look LUT next to the XML."""
     store = ProjectStore.open(root)
     try:
-        media = _pre(store)
-        if not media:
-            raise DraftError("nothing_to_keep")
-        clips = _day_clips(store, media, skip_clocks)
-        tracks = _music(store)
+        b = _built(store, kind, skip_clocks, ai_plan)
+        draft, (title, suffix) = b.draft, b.titles
         if ai_plan is not None:
-            draft = build_from_plan(ai_plan, clips, slow_track(tracks), SDE_US)
-            titles = _TITLES["sde_ai"]
-            plan_file = store.root / "cache" / "ai" / "love_plan.json"
+            plan_file = store.root / "cache" / "ai" / PLAN_FILE
             plan_file.parent.mkdir(parents=True, exist_ok=True)
             plan_file.write_text(json.dumps(asdict(ai_plan), ensure_ascii=False, indent=1,
                                             default=str), encoding="utf-8")  # fmt: skip
-        elif kind == "film":
-            draft, titles = build_film(clips, tracks), _TITLES[kind]
-        else:
-            draft, titles = build_clip(clips, tracks, kind), _TITLES[kind]
-        if not draft.shots:
-            raise DraftError("nothing_to_keep")
-        title, suffix = titles
         cut_id = store.create_cut(title, "16:9", draft.stats.duration_us)
         store.save_timeline(cut_id, draft.timeline)
         items = day_layout(draft)
-        all_media = store.list_media()
-        files = file_refs(all_media, {i.media_id for i in items})
-        lead = max((m.info for m in media if m.info and m.info.has_audio),
-                   key=lambda i: i.duration_us, default=media[0].info)  # fmt: skip
-        assert lead is not None
+        files = file_refs(store.list_media(), {i.media_id for i in items})
+        lead = _lead(b.media)
         xml, name = export_path(root, store, suffix)
-        write_sequence(xml, name, items, files, lead.fps, lead.width, lead.height)
+        clip = draft.fade  # SDE / express / love story: 25p, dissolves, the look
+        write_sequence(xml, name, items, files, CLIP_FPS if clip else lead.fps, lead.width,
+                       lead.height, dissolves=draft.dissolves, fade=draft.fade)  # fmt: skip
+        if clip:
+            write_cube(xml.parent / f"{LOOK_NAME}.cube")
         return DraftResult(xml, cut_id, draft.stats)
+    finally:
+        store.close()
+
+
+def _length(m: MediaRow) -> int:
+    return m.info.duration_us if m.info else 0
+
+
+def _lead(media: list[MediaRow]) -> MediaInfo:
+    lead = max((m.info for m in media if m.info and m.info.has_audio),
+               key=lambda i: i.duration_us, default=media[0].info)  # fmt: skip
+    assert lead is not None
+    return lead
+
+
+def saved_plan(root: Path) -> AiPlan | None:
+    """The AI director's last plan of this project (rebuilding it costs nothing)."""
+    path = root / "cache" / "ai" / PLAN_FILE
+    if not path.is_file():
+        return None
+    obj = json.loads(path.read_text("utf-8"))
+    shots = tuple(AiShot(**s) for s in obj.pop("shots"))
+    return AiPlan(shots=shots, **obj)
+
+
+def clip_luts(store: ProjectStore, clips: dict[int, int]) -> dict[int, Path]:
+    """Per clip (media id -> duration) a LUT: its balance towards the film's colour, then the
+    look. Frames are the AI director's (cached), made from the proxy when missing."""
+    cache = store.root / "cache"
+    frames: dict[int, list[np.ndarray]] = {}
+    for mid, duration in clips.items():
+        stills = []
+        for at in AI_FRAME_AT:
+            path = _ai_frame(cache, mid, at)
+            proxy = outputs_for(cache, mid).proxy
+            with contextlib.suppress(RuntimeError, ValueError, OSError):
+                if not path.is_file() and proxy.is_file():
+                    frame_at(proxy, round(duration * at), path, AI_FRAME_WIDTH)
+                if path.is_file():
+                    stills.append(small_rgb(path))
+        frames[mid] = stills
+    target = film_chroma([chroma(f) for f in frames.values()])
+    return {mid: write_cube(cache / "grade" / f"{mid}.cube", balance(f, target))
+            for mid, f in frames.items()}  # fmt: skip
+
+
+@dataclass(frozen=True)
+class RenderResult:
+    video: Path
+    from_proxy: bool  # the original files were not reachable (a drive unplugged)
+
+
+def render_draft(
+    root: Path,
+    kind: DayKind | Literal["sde_ai"],
+    *,
+    preview: bool = False,
+    skip_clocks: bool = True,
+    on_progress: Callable[[float], None] = lambda _p: None,
+    should_stop: Callable[[], bool] = lambda: False,
+) -> RenderResult:
+    """The finished video of a clip, coloured, from the same draft as its XML (an AI love
+    story from the saved plan, so no new request). `preview`: small and fast."""
+    store = ProjectStore.open(root)
+    try:
+        plan = saved_plan(root) if kind == "sde_ai" else None
+        if kind == "sde_ai" and plan is None:
+            raise DraftError("no_plan")
+        b = _built(store, "sde" if kind == "sde_ai" else kind, skip_clocks, plan)
+        items = day_layout(b.draft)
+        rows = {m.id: m for m in store.list_media()}
+        used = {i.media_id for i in items}
+        cache = store.root / "cache"
+        sources: dict[int, Path] = {}
+        from_proxy = False
+        for mid in used:
+            proxy = outputs_for(cache, mid).proxy
+            original = rows[mid].path
+            use_proxy = rows[mid].role is not MediaRole.MUSIC and (
+                preview or not original.is_file()
+            )
+            if use_proxy and proxy.is_file():
+                sources[mid] = proxy
+                from_proxy = from_proxy or not preview
+            elif original.is_file():
+                sources[mid] = original
+            else:
+                raise DraftError("missing_files")
+        durations = {mid: _length(rows[mid]) for mid in used}
+        shots = {i.media_id for i in items if i.track == "V1"}
+        luts = clip_luts(store, {mid: durations[mid] for mid in shots})
+        xml, _ = export_path(root, store, b.titles[1])
+        out = xml.with_suffix(".mp4") if not preview else xml.with_name(xml.stem + " · превью.mp4")
+        settings = RenderSettings.preview() if preview else RenderSettings()
+        video = render_film(items, sources, durations, out, luts=luts,
+                            dissolves=b.draft.dissolves, fade=b.draft.fade, settings=settings,
+                            work=cache / "render", on_progress=on_progress,
+                            should_stop=should_stop)  # fmt: skip
+        return RenderResult(video, from_proxy)
     finally:
         store.close()

@@ -31,8 +31,11 @@ class Segment:
     reasons: tuple[Reason, ...] = ()
     text: str | None = None
     anchor_id: str | None = None
+    speed: float = 1.0  # 0.5 = slow motion: half a second of the source per second on screen
 
     def __post_init__(self) -> None:
+        if not 0.1 <= self.speed <= 4.0:
+            raise ValueError(f"Segment {self.id}: speed {self.speed} is out of 0.1..4")
         if not self.bound_in <= self.src_in < self.src_out <= self.bound_out:
             raise ValueError(
                 f"Segment {self.id}: need bound_in <= src_in < src_out <= bound_out, got "
@@ -41,7 +44,8 @@ class Segment:
 
     @property
     def duration(self) -> int:
-        return self.src_out - self.src_in
+        """Length on the timeline (the source window played at `speed`)."""
+        return round((self.src_out - self.src_in) / self.speed)
 
 
 @dataclass(frozen=True)

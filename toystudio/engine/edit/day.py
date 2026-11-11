@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Literal
 
 from toystudio.core.models import AudioMode, Reason, Track
@@ -41,6 +42,11 @@ STAB_ENTRY = 0.39
 LOVE_MIN_CLIPS = 20
 LOVE_MAX_MEDIAN_US = 12 * S
 BAD_MAX = 0.3
+SLOW = 0.5  # slow motion: 50 fps footage on a 25 fps timeline, every frame shown
+SLOW_MIN_FPS = 47.0  # 50 / 59.94 / 100 fps; slower footage stays at real speed
+LOOP_MIN_US = 8 * S  # a track starts over only for this much more: a second of its intro jars
+JUMP_MAX = 4  # jump cuts from one take in the climax (more reads as a loop)
+CLIP_FPS = 25.0  # the timeline of the SDE / express (rule: 25p deliverable)
 
 ClipKind = Literal["sde", "express"]
 SectionKind = Literal["doc", "montage", "love"]
@@ -65,6 +71,11 @@ class DayClip:
     speech: tuple[Interval, ...] = ()  # clip time
     music: tuple[Interval, ...] = ()
     bad: tuple[Interval, ...] = ()
+    fps: float = 0.0
+
+    @property
+    def can_slow(self) -> bool:
+        return self.fps >= SLOW_MIN_FPS
 
     @property
     def aerial(self) -> bool:
@@ -109,6 +120,13 @@ class Shot:
     live: bool  # its own sound (rites) or the music
     reason: Reason
     section: int
+    speed: float = 1.0  # SLOW: the source window is half the shot's length on screen
+    part: str = ""  # intro / development / climax / outro in clips
+
+    @property
+    def length(self) -> int:
+        """Length on the timeline."""
+        return round((self.src_out - self.src_in) / self.speed)
 
 
 @dataclass(frozen=True)
@@ -117,6 +135,8 @@ class DayDraft:
     shots: tuple[Shot, ...]
     sections: tuple[SectionKind, ...]
     stats: DraftStats
+    dissolves: tuple[int, ...] = ()  # timeline positions of cuts that cross-dissolve
+    fade: bool = False  # from black at the start, to black at the end
 
 
 # ---- helpers
@@ -365,8 +385,9 @@ def _clip_shots(
     climax = [length for length, part in plan if part == "climax"]
     outro = [length for length, part in plan if part == "outro"]
     first = sorted(aerials, key=lambda c: c.time)
+    by_id = {c.media_id: c for c in clips}
     for m, a, b in _cut_shots(first[: max(1, len(intro))], intro, middle=False):
-        shots.append(Shot(m, a, b, False, _R["clip"], index))
+        shots.append(Shot(m, a, b, False, _R["clip"], index, part="intro"))
     dev_cuts = _cut_shots(sorted(clips, key=lambda c: c.time), dev, middle=True)
     # the climax sits where it belongs in time, cut from one long take (jump cuts)
     first_climax = next((i for i, (_, p) in enumerate(plan) if p == "climax"), len(plan))
@@ -375,22 +396,62 @@ def _clip_shots(
     hero = max(late, key=lambda c: c.duration)
     jump: list[Shot] = []
     at = int(hero.duration * 0.3)
-    for length in climax:
+    for length in climax[:JUMP_MAX]:
         if at + length > hero.duration:
             at = 0
-        jump.append(
-            Shot(hero.media_id, at, min(at + length, hero.duration), False, _R["climax"], index)
-        )
+        jump.append(Shot(hero.media_id, at, min(at + length, hero.duration), False,
+                         _R["climax"], index, part="climax"))  # fmt: skip
         at += length + length // 2
+    others = [c for c in late if c.media_id != hero.media_id] or late
+    rest = climax[JUMP_MAX:]  # the rest of the climax: quick cuts from other takes, two beats
+    pairs = [sum(rest[k : k + 2]) for k in range(0, len(rest), 2)]
+    jump += [Shot(m, a, b, False, _R["climax"], index, part="climax")
+             for m, a, b in _cut_shots(others, pairs, middle=True)]  # fmt: skip
     for m, a, b in dev_cuts[:split]:
-        shots.append(Shot(m, a, b, False, _R["clip"], index))
+        shots.append(_maybe_slow(Shot(m, a, b, False, _R["clip"], index, part="development"),
+                                 by_id, beat, shots))  # fmt: skip
     shots += [s for s in jump if s.src_out - s.src_in >= MIN_SEGMENT_US]
     for m, a, b in dev_cuts[split:]:
-        shots.append(Shot(m, a, b, False, _R["clip"], index))
+        shots.append(_maybe_slow(Shot(m, a, b, False, _R["clip"], index, part="development"),
+                                 by_id, beat, shots))  # fmt: skip
     last = sorted(aerials, key=lambda c: c.time)[-1:]
     for m, a, b in _cut_shots(last, outro, middle=False):
-        shots.append(Shot(m, a, b, False, _R["clip"], index))
+        shots.append(_maybe_slow(Shot(m, a, b, False, _R["clip"], index, part="outro"),
+                                 by_id, beat, shots))  # fmt: skip
     return shots
+
+
+def _maybe_slow(shot: Shot, by_id: dict[int, DayClip], beat: int, before: list[Shot]) -> Shot:
+    """Long shots (3+ beats) from 50 fps footage play at half speed, never two in a row: the
+    same length on screen from half the source window, around the middle of the window."""
+    c = by_id[shot.media_id]
+    length = shot.src_out - shot.src_in
+    if not c.can_slow or length < 3 * beat or (before and before[-1].speed != 1.0):
+        return shot
+    src = round(length * SLOW)
+    at = shot.src_in + (length - src) // 2
+    return Shot(shot.media_id, at, at + src, shot.live, shot.reason, shot.section, SLOW, shot.part)
+
+
+def dissolves(shots: list[Shot] | tuple[Shot, ...]) -> tuple[int, ...]:
+    """Cuts that cross-dissolve in a clip: out of the intro, into the outro, and every second
+    cut into a slow shot (never into the climax: it hits on a hard cut)."""
+    out: list[int] = []
+    pos = 0
+    into_slow = 0
+    for prev, cur in pairwise(shots):
+        pos += prev.length
+        if cur.part == "climax":
+            continue
+        if cur.speed != 1.0:
+            into_slow += 1
+        if (
+            (prev.part == "intro" and cur.part != "intro")
+            or (cur.part == "outro" and prev.part != "outro")
+            or (cur.speed != 1.0 and into_slow % 2 == 1)
+        ):
+            out.append(pos)
+    return tuple(out)
 
 
 # ---- assembly
@@ -411,14 +472,16 @@ def _music_under(shots: list[Shot], tracks: dict[int, MusicTrack | None]) -> lis
         if s.section not in by_section:
             order.append(s.section)
             by_section[s.section] = 0
-        by_section[s.section] += s.src_out - s.src_in
+        by_section[s.section] += s.length
     for sec in order:
         track, need = tracks.get(sec), by_section[sec]
+        first = True
         while need > 0 and track is not None and track.duration > track.first_beat:
             at = track.first_beat
             take = min(need, track.duration - at)
-            if take < MIN_SEGMENT_US:
+            if take < (MIN_SEGMENT_US if first else LOOP_MIN_US):
                 break
+            first = False
             pieces.append(Segment(f"m{len(pieces)}", Track.MUSIC, str(track.media_id), at,
                                   at + take, None, 0, track.duration))  # fmt: skip
             need -= take
@@ -438,6 +501,7 @@ def _timeline(shots: list[Shot], music: list[Segment], by_id: dict[int, DayClip]
             bound_out=by_id[s.media_id].duration,
             audio_mode=AudioMode.ORIGINAL if s.live else AudioMode.MUSIC,
             reasons=(s.reason,),
+            speed=s.speed,
         )
         for i, s in enumerate(shots)
     )
@@ -445,7 +509,7 @@ def _timeline(shots: list[Shot], music: list[Segment], by_id: dict[int, DayClip]
 
 
 def _stats(shots: list[Shot], clips: list[DayClip], n_sections: int) -> DraftStats:
-    duration = sum(s.src_out - s.src_in for s in shots)
+    duration = sum(s.length for s in shots)
     return DraftStats(duration, max(0, len(shots) - 1),
                       sum(c.duration for c in clips) - duration, n_sections)  # fmt: skip
 
@@ -512,7 +576,7 @@ def build_clip(clips: list[DayClip], tracks: list[MusicTrack], kind: ClipKind) -
     shots = _clip_shots(source, target, track, kind, 0)
     music = _music_under(shots, {0: track})
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), tuple(s.kind for s in secs),
-                    _stats(shots, source, 1))  # fmt: skip
+                    _stats(shots, source, 1), dissolves(shots), True)  # fmt: skip
 
 
 def day_layout(draft: DayDraft) -> list[Item]:
@@ -521,9 +585,8 @@ def day_layout(draft: DayDraft) -> list[Item]:
     pos = 0
     music_spans: list[Interval] = []
     for seg in draft.timeline.video:
-        items.append(
-            Item("V1", int(seg.media_id), seg.src_in, seg.src_out, pos, pos + seg.duration)
-        )
+        end = pos + seg.duration
+        items.append(Item("V1", int(seg.media_id), seg.src_in, seg.src_out, pos, end, seg.speed))
         if seg.audio_mode is AudioMode.ORIGINAL:
             items.append(Item("A", int(seg.media_id), seg.src_in, seg.src_out, pos,
                               pos + seg.duration))  # fmt: skip

@@ -22,19 +22,24 @@ TIMEOUT_S = 300.0
 
 SYSTEM = """You are the editor of a wedding video studio in Kyrgyzstan. You cut the love \
 story of a wedding day into a same-day edit (SDE) that is shown at the restaurant in the \
-evening. You see numbered clips from the love story shoot, each with one or two frames, its \
-length and quality notes.
+evening. You see numbered clips from the love story shoot, each with up to three frames (from \
+its beginning, middle and end), its length, frame rate and quality notes.
 
 Build a clip that tells a short story: details and getting ready, the couple meeting, the \
 walk and the most beautiful moments, a climax, and a strong final image. The studio's own \
 films follow this shape:
 - intro 5-10 s: an aerial or wide establishing shot;
 - development: portraits, hands, details, the couple together, in an order that reads;
-- climax at about 75-85 % of the length: a burst of one-beat jump cuts from one take;
+- climax at about 75-85 % of the length: 3-4 one-beat jump cuts from one take, then a few \
+quick shots from other takes;
 - outro 5-10 s: an aerial or the couple, calm.
-Shots are 1-4 beats of the music long (median about 3 beats). Take the shot from the middle \
-of a clip (start around 25-35 %) unless a frame shows the best moment elsewhere. Skip clips \
-noted as shaky or blurry, and avoid near-identical shots in a row.
+Shots are 1-4 beats of the music long (median about 3 beats). Start each shot where its frames \
+show the best moment (the frames are at 10, 50 and 90 % of the clip). Skip clips noted as \
+shaky or blurry. Never put two near-identical shots side by side, use a clip at most twice, \
+keep at most three shots in a row in one place, and alternate wide, medium and close shots.
+Mark `slow` the emotional shots that gain from half speed: embraces, the veil, a look, a \
+walk, hair or dress in the wind, a kiss - about a third of the shots, never in the climax. \
+Only clips of 50 fps or more can be slowed; others play at real speed.
 
 Write `story` and every `why` in Russian, short and concrete (what is in the shot and why it \
 is there)."""
@@ -53,7 +58,8 @@ class _Shot(BaseModel):
     start_pct: float = Field(
         description="Where the shot starts in the clip, in percent from 0 to 100 (30 = 30 %)"
     )
-    beats: int = Field(description="Length in beats of the music, 1 to 8")
+    beats: int = Field(description="Length on screen in beats of the music, 1 to 8")
+    slow: bool = Field(description="Half speed (only clips of 50+ fps)")
     part: Literal["intro", "development", "climax", "outro"]
     why: str
 
@@ -64,12 +70,14 @@ class _Plan(BaseModel):
 
 
 def _picked(clips: Sequence[AiClip]) -> tuple[list[AiClip], int]:
-    """Clips to send and frames per clip, within MAX_FRAMES (even spread when too many)."""
+    """Clips to send and frames per clip (3, 2 or 1) within MAX_FRAMES (even spread when even
+    one frame each is too many)."""
     chosen = list(clips)
     if len(chosen) > MAX_FRAMES:
         step = len(chosen) / MAX_FRAMES
         chosen = [chosen[int(i * step)] for i in range(MAX_FRAMES)]
-    per_clip = 2 if sum(min(len(c.frames), 2) for c in chosen) <= MAX_FRAMES else 1
+    per_clip = next(n for n in (3, 2, 1)
+                    if n == 1 or sum(min(len(c.frames), n) for c in chosen) <= MAX_FRAMES)  # fmt: skip
     return chosen, per_clip
 
 
@@ -92,9 +100,9 @@ def build_content(
     ]
     for c in chosen:
         notes = f" · {', '.join(c.flags)}" if c.flags else ""
-        content.append(
-            {"type": "text", "text": f"Клип {c.id} · {c.duration_us / 1_000_000:.1f} с{notes}"}
-        )
+        fps = f" · {c.fps:.0f} к/с" if c.fps else ""
+        caption = f"Клип {c.id} · {c.duration_us / 1_000_000:.1f} с{fps}{notes}"
+        content.append({"type": "text", "text": caption})
         for frame in c.frames[:per_clip]:
             data = base64.standard_b64encode(frame.read_bytes()).decode("ascii")
             content.append(
@@ -150,7 +158,7 @@ def plan_love_story(
     parsed = response.parsed_output
     if parsed is None:
         raise DirectorError("empty", f"stop_reason={response.stop_reason}")
-    shots = tuple(AiShot(s.clip, s.start_pct, s.beats, s.part, s.why) for s in parsed.shots)
+    shots = tuple(AiShot(s.clip, s.start_pct, s.beats, s.part, s.why, s.slow) for s in parsed.shots)
     chosen, _ = _picked(clips)
     return AiPlan(
         story=parsed.story,

@@ -39,7 +39,14 @@ from toystudio.core.models import (
     StageState,
 )
 from toystudio.engine.analysis.quality import overall_label
-from toystudio.jobs.day_draft import build_day_draft, clocks, love_inputs
+from toystudio.engine.render.film import RenderStopped
+from toystudio.jobs.day_draft import (
+    RenderResult,
+    build_day_draft,
+    clocks,
+    love_inputs,
+    render_draft,
+)
 from toystudio.jobs.launch import stop_file_for, worker_argv
 from toystudio.jobs.manager import JobManager
 from toystudio.jobs.protocol import Progress
@@ -142,6 +149,37 @@ class _AiTask(QObject, QRunnable):
             self.done.emit(result, plan, None)
 
 
+CLIP_KINDS: tuple[DraftKind, ...] = ("express", "sde", "sde_ai")  # these render to a video
+
+
+class _RenderTask(QObject, QRunnable):
+    """The finished video of a clip off the GUI thread, with progress."""
+
+    progress = Signal(float)
+    done = Signal(object, object)  # RenderResult | None, error code | None
+
+    def __init__(self, root: Path, kind: DraftKind, skip_clocks: bool) -> None:
+        QObject.__init__(self)
+        QRunnable.__init__(self)
+        self.setAutoDelete(False)
+        self.root, self.kind, self.skip_clocks = root, kind, skip_clocks
+        self.stop = False
+
+    def run(self) -> None:
+        try:
+            result = render_draft(self.root, self.kind,  # type: ignore[arg-type]
+                                  skip_clocks=self.skip_clocks, on_progress=self.progress.emit,
+                                  should_stop=lambda: self.stop)  # fmt: skip
+        except RenderStopped:
+            self.done.emit(None, None)
+        except DraftError as e:
+            self.done.emit(None, e.code)
+        except (OSError, sqlite3.Error, ValueError, RuntimeError):
+            self.done.emit(None, "render_failed")
+        else:
+            self.done.emit(result, None)
+
+
 @dataclass
 class _Snapshot:
     name: str = ""
@@ -213,6 +251,12 @@ class AnalysisVM(QObject):
         self.ai_plan: AiPlan | None = None
         self.ai_busy = False
         self._ai_task: _AiTask | None = None
+        self._skip_clocks = False  # as the last draft was built, so its video matches it
+        self.render_busy = False
+        self.render_percent = 0
+        self.render_result: RenderResult | None = None
+        self.render_error: str | None = None
+        self._render_task: _RenderTask | None = None
         jobs.progress.connect(self._on_progress)
         jobs.event.connect(self._on_event)
         jobs.finished.connect(self._on_finished)
@@ -248,6 +292,43 @@ class AnalysisVM(QObject):
     def can_draft(self) -> bool:
         return bool(self.draft_kinds)
 
+    @property
+    def can_render(self) -> bool:
+        """A clip draft is ready: it can be saved as a finished video."""
+        return self.draft is not None and self.draft_kind in CLIP_KINDS
+
+    def render_video(self) -> None:
+        """Render the current clip draft in the background; `changed` fires as it goes."""
+        if self.render_busy or not self.can_render:
+            return
+        self.render_busy, self.render_percent = True, 0
+        self.render_result, self.render_error = None, None
+        self._render_task = _RenderTask(self.root, self.draft_kind, self._skip_clocks)
+        self._render_task.progress.connect(self._on_render_progress)
+        self._render_task.done.connect(self._on_render_done)
+        QThreadPool.globalInstance().start(self._render_task)
+        self.changed.emit()
+
+    def stop_render(self) -> None:
+        if self._render_task is not None:
+            self._render_task.stop = True
+
+    def _on_render_progress(self, share: float) -> None:
+        percent = int(share * 100)
+        if percent != self.render_percent:
+            self.render_percent = percent
+            self.changed.emit()
+
+    def _on_render_done(self, result: object, error: object) -> None:
+        self.render_busy, self._render_task = False, None
+        self.render_result = result if isinstance(result, RenderResult) else None
+        self.render_error = error if isinstance(error, str) else None
+        self.changed.emit()
+
+    def _new_draft(self, kind: DraftKind, skip_clocks: bool) -> None:
+        self.draft_kind, self._skip_clocks = kind, skip_clocks
+        self.render_result, self.render_error = None, None
+
     def needs_clocks(self) -> bool:
         """Cameras before the restaurant whose clocks still need a pair of clips."""
         try:
@@ -263,7 +344,8 @@ class AnalysisVM(QObject):
         """Ask the AI director in the background; `changed` fires when the draft is ready."""
         if self.ai_busy:
             return
-        self.draft_kind, self.draft, self.draft_error, self.ai_plan = "sde_ai", None, None, None
+        self._new_draft("sde_ai", skip_clocks)
+        self.draft, self.draft_error, self.ai_plan = None, None, None
         self.ai_busy = True
         self._ai_task = _AiTask(self.root, skip_clocks)
         self._ai_task.done.connect(self._on_ai_done)
@@ -282,7 +364,8 @@ class AnalysisVM(QObject):
         if kind == "sde_ai":
             self.build_ai_draft(skip_clocks=skip_clocks)
             return
-        self.draft_kind, self.ai_plan = kind, None
+        self._new_draft(kind, skip_clocks)
+        self.ai_plan = None
         try:
             if kind == "restaurant":
                 result = build_draft(self.root)

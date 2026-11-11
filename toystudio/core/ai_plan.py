@@ -15,6 +15,7 @@ class AiClip:
     duration_us: int
     flags: tuple[str, ...]  # «трясётся», «размыто», «темно»
     frames: tuple[Path, ...]
+    fps: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class AiShot:
     beats: int  # length in beats of the music
     part: Part
     why: str  # one short reason in Russian, shown in the draft
+    slow: bool = False  # half speed (only footage with 50+ fps gets it)
 
 
 @dataclass(frozen=True)

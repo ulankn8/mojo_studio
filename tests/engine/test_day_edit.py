@@ -1,10 +1,14 @@
 """The day before the restaurant: sections, rites, montage, love story, SDE and express."""
 
 import statistics
+from dataclasses import replace
+from itertools import accumulate, pairwise
 
-from toystudio.core.models import AudioMode, Track
+from toystudio.core.models import AudioMode, Reason, Track
 from toystudio.engine.audio.beats import Beats
 from toystudio.engine.edit.day import (
+    JUMP_MAX,
+    SLOW,
     TAKE_MAX_US,
     DayClip,
     MusicTrack,
@@ -129,11 +133,30 @@ def test_love_story_closes_the_film_as_an_sde():
 def test_sde_shape():
     d = _day()
     sde = build_clip(d.clips, [track(98)], "sde")
-    lengths = [s.src_out - s.src_in for s in sde.shots]
+    lengths = [s.length for s in sde.shots]
     assert 85 * S <= sum(lengths) <= 92 * S
     assert 1.2 * S <= statistics.median(lengths) <= 2.5 * S
-    climax = [s for s in sde.shots if s.reason.code == "day_climax"]
-    assert len(climax) >= 4 and len({s.media_id for s in climax}) == 1  # jump cuts of one take
+    climax = [s for s in sde.shots if s.part == "climax"]
+    jumps = climax[:JUMP_MAX]
+    assert len({s.media_id for s in jumps}) == 1  # jump cuts of one take ...
+    assert sum(s.media_id == jumps[0].media_id for s in climax) == JUMP_MAX  # ... four, not ten
+    assert sde.fade and sde.dissolves  # out of the intro, into the outro
+    assert all(s.speed == 1.0 for s in sde.shots)  # 0 fps in the test: no frames for slow motion
+
+
+def test_sde_slows_long_shots_of_50_fps_footage():
+    d = _day()
+    clips = [replace(c, fps=50.0) for c in d.clips]
+    sde = build_clip(clips, [track(98)], "sde")
+    slow = [k for k, s in enumerate(sde.shots) if s.speed == SLOW]
+    assert slow and all(b - a > 1 for a, b in pairwise(slow))  # never two slow shots in a row
+    for k in slow:
+        s = sde.shots[k]
+        assert s.part != "climax" and s.src_out - s.src_in == round(s.length * SLOW)
+    assert 85 * S <= sde.stats.duration_us <= 92 * S
+    assert sde.timeline.duration() == sde.stats.duration_us
+    starts = set(accumulate(s.length for s in sde.shots))
+    assert set(sde.dissolves) <= starts  # dissolves sit on cuts
 
 
 def test_express_is_three_minutes_of_the_whole_day():
@@ -173,3 +196,15 @@ def test_layout_live_sound_and_music_tracks():
 def test_empty_day():
     assert build_film([], []).shots == ()
     assert build_clip([], [], "express").shots == ()
+
+
+def test_music_does_not_start_over_for_a_short_tail():
+    from toystudio.engine.edit.day import LOOP_MIN_US, Shot, _music_under
+
+    r = Reason("x", "x", "x")
+    short = MusicTrack(9, 90 * S, Beats(98.0, (S,), 0.9))  # 89 s from its first beat
+    shots = [Shot(1, 0, 92 * S, False, r, 0)]
+    (piece,) = _music_under(shots, {0: short})  # 3 s short: fade out, no second intro
+    assert piece.src_out - piece.src_in == 89 * S
+    longer = [Shot(1, 0, 89 * S + LOOP_MIN_US + S, False, r, 0)]
+    assert len(_music_under(longer, {0: short})) == 2  # a real loop is still a loop

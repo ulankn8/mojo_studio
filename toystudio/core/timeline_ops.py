@@ -84,7 +84,7 @@ def split(t: Timeline, seg_id: str, at_timeline: int, new_id: str) -> Timeline:
     offset = at_timeline - t.starts(track)[i]
     if offset < MIN_SEGMENT_US or s.duration - offset < MIN_SEGMENT_US:
         raise ValueError("split point is too close to a segment edge")
-    cut = s.src_in + offset
+    cut = s.src_in + round(offset * s.speed)
     first = replace(s, src_out=cut, manual=True)
     second = replace(s, id=new_id, src_in=cut, manual=True)
     out = _with_track(t, track, (*segs[:i], first, second, *segs[i + 1 :]))

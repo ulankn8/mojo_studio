@@ -1,4 +1,7 @@
-"""Love story from the AI plan: beats, checks, fitting to the length."""
+"""Love story from the AI plan: beats, checks, repeats, slow motion, fitting to the length."""
+
+from dataclasses import replace
+from itertools import accumulate
 
 from toystudio.core.ai_plan import AiPlan, AiShot
 from toystudio.engine.audio.beats import Beats
@@ -34,8 +37,8 @@ def _plan(*shots):
     return AiPlan("Утро, встреча, прогулка и крыша", tuple(shots))
 
 
-def shot(clip, beats=3, pct=30.0, part="development", why="руки"):
-    return AiShot(clip, pct, beats, part, why)
+def shot(clip, beats=3, pct=30.0, part="development", why="руки", slow=False):
+    return AiShot(clip, pct, beats, part, why, slow)
 
 
 def test_plan_becomes_beat_long_shots_in_its_order():
@@ -62,18 +65,84 @@ def test_bad_frames_are_avoided():
 
 
 def test_same_window_twice_moves_on():
-    d = build_from_plan(_plan(shot(1, 2, pct=30), shot(1, 2, pct=30)), _clips(), _track(), 88 * S)
-    a, b = d.shots
+    plan = _plan(shot(1, 2, pct=30), shot(2, 2), shot(1, 2, pct=30))
+    a, _, b = build_from_plan(plan, _clips(), _track(), 88 * S).shots
+    assert a.media_id == b.media_id == 1
     assert b.src_in >= a.src_out or b.src_out <= a.src_in
 
 
 def test_fitted_to_the_target_length():
-    long_plan = _plan(*(shot(1 + k % 10, 4) for k in range(60)))  # 60 x 2.4 s = 144 s
-    d = build_from_plan(long_plan, _clips(seconds=30), _track(), 88 * S)
+    long_plan = _plan(*(shot(1 + k, 4) for k in range(60)))  # 60 x 2.4 s = 144 s
+    d = build_from_plan(long_plan, _clips(60, seconds=30), _track(), 88 * S)
     assert d.stats.duration_us == 88 * S
     short_plan = _plan(shot(1, 2), shot(2, 2))
     d2 = build_from_plan(short_plan, _clips(seconds=200), _track(), 30 * S)
     assert d2.stats.duration_us == 30 * S  # the last shot runs on
+
+
+def test_too_long_plan_keeps_its_climax_and_ending():
+    middle = [shot(1 + k, 4) for k in range(40)]  # 40 x 2.4 s: far more than 30 s
+    plan = _plan(*middle, shot(41, 1, part="climax"), shot(42, 4, part="outro"))
+    d = build_from_plan(plan, _clips(42, seconds=30), _track(), 30 * S)
+    assert [s.part for s in d.shots[-2:]] == ["climax", "outro"]
+    assert d.shots[-1].media_id == 42 and d.stats.duration_us == 30 * S
+
+
+# --- repeats a viewer notices
+
+
+def test_climax_keeps_four_jump_cuts_of_one_take():
+    burst = [shot(5, 1, pct=10 + 8 * k, part="climax") for k in range(10)]
+    d = build_from_plan(_plan(shot(1), *burst, shot(2, part="outro")), _clips(seconds=60),
+                        _track(), 88 * S)  # fmt: skip
+    assert [s.media_id for s in d.shots] == [1, 5, 5, 5, 5, 2]
+
+
+def test_a_clip_is_used_at_most_twice():
+    plan = _plan(*(shot(c) for c in (1, 2, 1, 3, 1, 4)))
+    ids = [s.media_id for s in build_from_plan(plan, _clips(), _track(), 88 * S).shots]
+    assert ids.count(1) == 2
+
+
+def test_look_alike_shots_are_not_side_by_side():
+    looks = {1: 0, 2: 0b111, 3: 2**64 - 1, 4: 2**40 - 1}  # 1 and 2 differ in 3 bits of 64
+    plan = _plan(shot(1), shot(2), shot(3), shot(4))
+    ids = [s.media_id for s in build_from_plan(plan, _clips(), _track(), 88 * S, looks).shots]
+    assert ids == [1, 3, 2, 4]  # 2 waited until a different picture came between
+    alone = _plan(shot(1), shot(1, pct=60), shot(2, part="outro"))
+    ids = [s.media_id for s in build_from_plan(alone, _clips(), _track(), 88 * S).shots]
+    assert ids == [1, 2]  # the same clip twice in a row: nowhere to move it, dropped
+
+
+# --- slow motion and transitions
+
+
+def _fps(clips, fps):
+    return [replace(c, fps=fps) for c in clips]
+
+
+def test_slow_shot_of_50_fps_footage_takes_half_the_source():
+    d = build_from_plan(_plan(shot(1, 4, slow=True), shot(2, 4)), _fps(_clips(), 50.0),
+                        _track(), 88 * S)  # fmt: skip
+    slow, normal = d.shots[0], d.shots[1]
+    assert slow.speed == 0.5 and slow.src_out - slow.src_in == 2 * BEAT
+    assert slow.length == 4 * BEAT and normal.speed == 1.0
+    assert d.timeline.video[0].speed == 0.5 and d.timeline.duration() == d.stats.duration_us
+
+
+def test_slow_is_ignored_without_the_frames_and_in_the_climax():
+    drone = build_from_plan(_plan(shot(1, 4, slow=True)), _fps(_clips(), 29.97), _track(), 88 * S)
+    assert drone.shots[0].speed == 1.0
+    jump = _plan(shot(2), shot(1, 1, slow=True, part="climax"))
+    assert build_from_plan(jump, _fps(_clips(), 50.0), _track(), 88 * S).shots[1].speed == 1.0
+
+
+def test_dissolves_out_of_the_intro_and_into_the_outro():
+    plan = _plan(shot(1, 4, part="intro"), shot(2), shot(3, 1, part="climax"),
+                 shot(4, 1, part="climax"), shot(5, part="outro"))  # fmt: skip
+    d = build_from_plan(plan, _clips(), _track(), 88 * S)
+    cuts = list(accumulate(s.length for s in d.shots))[:-1]
+    assert d.fade and d.dissolves == (cuts[0], cuts[3])  # the climax stays sharp
 
 
 def test_music_under_the_clip_and_empty_plan():

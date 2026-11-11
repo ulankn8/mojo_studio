@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import math
 from bisect import bisect_left
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Literal
 
 from toystudio.core.models import MediaRole, Reason, Track
@@ -348,6 +350,22 @@ class Item:
     src_out: int
     start: int  # position in the sequence
     end: int
+    speed: float = 1.0  # 0.5: slow motion, the source window is half the sequence length
+
+
+def joins(
+    clips: Sequence[Item], durations: Mapping[int, int], cuts: Iterable[int], half: int
+) -> list[bool]:
+    """For each cut between neighbouring clips of one track: is it a dissolve? Only the asked
+    `cuts`, and only where both clips have `half` of source (at their speed) beyond the cut."""
+    wanted = set(cuts)
+    return [
+        a.end == b.start
+        and b.start in wanted
+        and b.src_in - round(half * b.speed) >= 0
+        and a.src_in + round((a.end - a.start + half) * a.speed) <= durations[a.media_id]
+        for a, b in pairwise(clips)
+    ]
 
 
 def layered(draft: Draft, clips: list[Clip]) -> list[Item]:

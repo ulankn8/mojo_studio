@@ -70,6 +70,13 @@ _DRAFT_ERRORS = {
     ),
     "ai_empty": QT_TRANSLATE_NOOP("AnalysisScreen", "ИИ не вернул план — попробуйте ещё раз."),
     "error": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось собрать черновик."),
+    "missing_files": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Нет ни исходников, ни уменьшенных копий — подключите диск с файлами."
+    ),
+    "no_plan": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "План ИИ не найден — соберите Love Story с ИИ ещё раз."
+    ),
+    "render_failed": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось сохранить видео."),
 }
 FEED_LIMIT = 50  # cards shown; the rest is a single «и ещё N» line
 
@@ -165,6 +172,8 @@ class AnalysisScreen(QWidget):
             self.draft_buttons[kind] = b
             draft_row.addWidget(b)
         draft_row.addStretch(1)
+        self.render_button = QPushButton()
+        draft_row.addWidget(self.render_button)
         self.open_folder_button = QPushButton()
         set_variant(self.open_folder_button, "variant", "ghost")
         draft_row.addWidget(self.open_folder_button)
@@ -220,6 +229,9 @@ class AnalysisScreen(QWidget):
 
         self.stop_button.clicked.connect(vm.stop)
         self.open_folder_button.clicked.connect(self._open_draft_folder)
+        self.render_button.clicked.connect(
+            lambda: vm.stop_render() if vm.render_busy else vm.render_video()
+        )
         self.resume_button.clicked.connect(vm.resume)
         self.retry_button.clicked.connect(vm.resume)
         self.missing_retry_button.clicked.connect(vm.resume)
@@ -271,6 +283,9 @@ class AnalysisScreen(QWidget):
         self.draft_label.setVisible(bool(self.draft_label.text()))
         set_variant(self.draft_label, "tone", "error" if vm.draft_error else "done")
         self.open_folder_button.setVisible(vm.draft is not None)
+        self.render_button.setVisible(vm.can_render or vm.render_busy)
+        self.render_button.setEnabled(not vm.ai_busy)
+        self._set_render_text()
         self._offline_note.setVisible(running)
         failed = [] if running else vm.failed_files
         self._failed_box.setVisible(bool(failed) and not vm.all_failed)
@@ -432,31 +447,82 @@ class AnalysisScreen(QWidget):
             return QCoreApplication.translate(
                 "AnalysisScreen", "ИИ смотрит кадры и выстраивает историю — около минуты…"
             )
-        if vm.draft is not None and vm.ai_plan is not None:
-            st, plan = vm.draft.stats, vm.ai_plan
+        if vm.draft is not None:
+            return "\n".join(t for t in (self._summary(), self._clip_notes()) if t)
+        if vm.draft_error is None:
+            return ""
+        return QCoreApplication.translate("AnalysisScreen", _DRAFT_ERRORS.get(vm.draft_error,
+                                          _DRAFT_ERRORS["error"]))  # fmt: skip
+
+    def _summary(self) -> str:
+        vm = self.vm
+        assert vm.draft is not None
+        st = vm.draft.stats
+        if vm.ai_plan is not None:
             return (
                 QCoreApplication.translate(
                     "AnalysisScreen", "Love Story: %1, склеек %2 · ИИ: «%3» · ≈ $%4"
                 )
                 .replace("%1", format_timecode(st.duration_us))
                 .replace("%2", str(st.cuts))
-                .replace("%3", plan.story)
-                .replace("%4", f"{plan.cost_usd:.2f}")
+                .replace("%3", vm.ai_plan.story)
+                .replace("%4", f"{vm.ai_plan.cost_usd:.2f}")
             )
-        if vm.draft is not None:
-            st = vm.draft.stats
-            return (
-                QCoreApplication.translate(
-                    "AnalysisScreen", "Черновик: %1, склеек %2, убрано пауз и музыки %3"
-                )
-                .replace("%1", format_timecode(st.duration_us))
-                .replace("%2", str(st.cuts))
-                .replace("%3", format_timecode(st.dropped_us))
+        return (
+            QCoreApplication.translate(
+                "AnalysisScreen", "Черновик: %1, склеек %2, убрано пауз и музыки %3"
             )
-        if vm.draft_error is None:
+            .replace("%1", format_timecode(st.duration_us))
+            .replace("%2", str(st.cuts))
+            .replace("%3", format_timecode(st.dropped_us))
+        )
+
+    def _clip_notes(self) -> str:
+        """For a clip: the colour in Premiere, and what became of its video."""
+        vm = self.vm
+        if not vm.can_render:
             return ""
-        return QCoreApplication.translate("AnalysisScreen", _DRAFT_ERRORS.get(vm.draft_error,
-                                          _DRAFT_ERRORS["error"]))  # fmt: skip
+        lines = [
+            QCoreApplication.translate(
+                "AnalysisScreen",
+                "Цвет в Premiere: «T-Studio Тёплое кино.cube» из той же папки — на "
+                "корректирующий слой, Lumetri → Creative → Look.",
+            )
+        ]
+        if vm.render_result is not None:
+            lines.append(
+                QCoreApplication.translate("AnalysisScreen", "Видео сохранено: %1").replace(
+                    "%1", vm.render_result.video.name
+                )
+            )
+            if vm.render_result.from_proxy:
+                lines.append(
+                    QCoreApplication.translate(
+                        "AnalysisScreen",
+                        "Исходники не найдены — видео собрано из уменьшенных копий. "
+                        "Подключите диск и сохраните ещё раз для полного качества.",
+                    )
+                )
+        elif vm.render_error is not None:
+            lines.append(
+                QCoreApplication.translate(
+                    "AnalysisScreen", _DRAFT_ERRORS.get(vm.render_error, _DRAFT_ERRORS["error"])
+                )
+            )
+        return "\n".join(lines)
+
+    def _set_render_text(self) -> None:
+        vm = self.vm
+        if vm.render_busy:
+            text = QCoreApplication.translate(
+                "AnalysisScreen", "Сохраняю видео… %1 % · остановить"
+            ).replace("%1", str(vm.render_percent))
+        else:
+            text = QCoreApplication.translate("AnalysisScreen", "Сохранить видео")
+        self.render_button.setText(text)
+        self.render_button.setIcon(icon("film", token("ink-muted"), 16))
+        self.render_button.setMinimumWidth(self.render_button.fontMetrics().horizontalAdvance(text)
+                                           + 64)  # fmt: skip
 
     def _build(self, kind: DraftKind) -> None:
         """Build a draft; when camera clocks disagree, match them first (or skip) and retry."""
@@ -498,6 +564,7 @@ class AnalysisScreen(QWidget):
             QCoreApplication.translate("AnalysisScreen", "Открыть папку")
         )
         self.open_folder_button.setIcon(icon("folder", token("ink-muted"), 16))
+        self._set_render_text()
         self._draft_title.setText(
             QCoreApplication.translate("AnalysisScreen", "Черновики для Premiere")
         )

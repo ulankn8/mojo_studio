@@ -973,11 +973,53 @@ def test_ai_love_story_runs_in_background_and_shows_the_story(
     assert vm.ai_busy and screen.draft_label.text().startswith("ИИ смотрит кадры")
     assert not screen.draft_buttons["sde"].isEnabled()
     qtbot.waitUntil(lambda: not vm.ai_busy, timeout=5000)
-    assert (
-        screen.draft_label.text()
-        == "Love Story: 01:28, склеек 47 · ИИ: «Сборы, встреча, крыша» · ≈ $0.22"
-    )
+    first, look = screen.draft_label.text().split("\n")
+    assert first == "Love Story: 01:28, склеек 47 · ИИ: «Сборы, встреча, крыша» · ≈ $0.22"
+    assert "Тёплое кино.cube" in look and "Lumetri" in look
     assert screen.draft_buttons["sde"].isEnabled() and not screen.open_folder_button.isHidden()
+    assert not screen.render_button.isHidden() and screen.render_button.text() == "Сохранить видео"
+
+    # the finished video, in the background, from the same draft
+    from toystudio.jobs.day_draft import RenderResult
+
+    calls = []
+
+    def fake_render(root, kind, **kw):
+        calls.append((kind, kw["skip_clocks"]))
+        kw["on_progress"](0.5)
+        return RenderResult(tmp_path / "export" / "x.mp4", from_proxy=True)
+
+    monkeypatch.setattr(avm, "render_draft", fake_render)
+    screen.render_button.click()
+    assert vm.render_busy and screen.render_button.text().startswith("Сохраняю видео")
+    qtbot.waitUntil(lambda: not vm.render_busy, timeout=5000)
+    assert calls == [("sde_ai", False)]
+    text = screen.draft_label.text()
+    assert "Видео сохранено: x.mp4" in text and "уменьшенных копий" in text
+
+
+def test_render_failure_is_explained_and_rules_drafts_can_render(
+    qtbot, project, jobs, app_store, monkeypatch, tmp_path
+):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.engine.edit.restaurant import DraftStats
+    from toystudio.jobs.restaurant_draft import DraftError, DraftResult
+
+    plan = None
+    vm, screen = _ai_screen(qtbot, project, jobs, app_store, monkeypatch, lambda *a, **k: plan)
+    stats = DraftStats(duration_us=88_000_000, cuts=47, dropped_us=0, blocks=1)
+    monkeypatch.setattr(avm, "build_day_draft",
+                        lambda *a, **k: DraftResult(tmp_path / "x.xml", "cut", stats))  # fmt: skip
+    screen.draft_buttons["sde"].click()
+    assert vm.can_render and not screen.render_button.isHidden()
+
+    def broken(*_a, **_k):
+        raise DraftError("missing_files")
+
+    monkeypatch.setattr(avm, "render_draft", broken)
+    screen.render_button.click()
+    qtbot.waitUntil(lambda: not vm.render_busy, timeout=5000)
+    assert "подключите диск" in screen.draft_label.text()
 
 
 def test_ai_without_a_key_explains_what_to_do(qtbot, project, jobs, app_store, monkeypatch):

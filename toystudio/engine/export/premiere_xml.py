@@ -1,7 +1,9 @@
 """Final Cut Pro 7 XML (xmeml v4): Adobe Premiere Pro opens it via File > Import.
 
 Every clip time is written in frames of the sequence. A file is described in full the first
-time it appears and referenced by id afterwards, as Premiere expects.
+time it appears and referenced by id afterwards, as Premiere expects. Slow motion is the
+standard Time Remap filter; dissolves are transition items on V1 (a clip next to one has
+start or end -1 and its in/out reach into the handle, as FCP7 writes them).
 """
 
 from __future__ import annotations
@@ -15,10 +17,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 from toystudio.core.models import US_PER_S
-from toystudio.engine.edit.restaurant import Item
+from toystudio.engine.edit.restaurant import Item, joins
 
 _WINDOWS_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 SAMPLE_RATE = 48_000
+DISSOLVE_US = 480_000  # 12 frames at 25 fps
 
 
 @dataclass(frozen=True)
@@ -67,8 +70,19 @@ def _text(parent: ET.Element, tag: str, value: object) -> ET.Element:
 
 
 def sequence_xml(
-    name: str, items: Sequence[Item], files: dict[int, FileRef], fps: float, width: int, height: int
+    name: str,
+    items: Sequence[Item],
+    files: dict[int, FileRef],
+    fps: float,
+    width: int,
+    height: int,
+    *,
+    dissolves: Sequence[int] = (),
+    fade: bool = False,
 ) -> str:
+    """`dissolves`: sequence positions (us) of V1 cuts to cross-dissolve; `fade`: from black at
+    the start and to black at the end. A dissolve without enough media on both sides is
+    left a cut."""
     fr = _Frames(fps)
     root = ET.Element("xmeml", version="4")
     seq = ET.SubElement(root, "sequence", id="sequence-1")
@@ -92,7 +106,15 @@ def sequence_xml(
     described: set[int] = set()
     count = [0]
 
-    def clipitem(track: ET.Element, it: Item, kind: str, channel: int = 1) -> None:
+    def clipitem(
+        track: ET.Element,
+        it: Item,
+        kind: str,
+        channel: int = 1,
+        before: int | None = None,
+        after: int | None = None,
+    ) -> None:
+        """`before` / `after`: frames of a transition reaching into this clip's handles."""
         f = files[it.media_id]
         count[0] += 1
         ci = ET.SubElement(track, "clipitem", id=f"clipitem-{count[0]}")
@@ -102,22 +124,64 @@ def sequence_xml(
         ci.append(fr.element())
         start, end = fr(it.start), fr(it.end)
         src_in = fr(it.src_in)
-        _text(ci, "start", start)
-        _text(ci, "end", end)
+        src_out = src_in + round((end - start) * it.speed)
+        if before is not None:
+            src_in -= round(before * it.speed)
+        if after is not None:
+            src_out += round(after * it.speed)
+        _text(ci, "start", -1 if before is not None else start)
+        _text(ci, "end", -1 if after is not None else end)
         _text(ci, "in", src_in)
-        _text(ci, "out", src_in + end - start)
+        _text(ci, "out", src_out)
         ci.append(_file(it.media_id, f, fr, full=it.media_id not in described))
         described.add(it.media_id)
+        if kind == "video" and it.speed != 1.0:
+            ci.append(_time_remap(it.speed))
         if kind == "audio":
             src = ET.SubElement(ci, "sourcetrack")
             _text(src, "mediatype", "audio")
             _text(src, "trackindex", channel)
 
-    for name_ in ("V1", "V2"):
-        track = ET.SubElement(video, "track")
-        for it in items:
-            if it.track == name_:
-                clipitem(track, it, "video")
+    def transition(track: ET.Element, start: int, end: int, alignment: str) -> None:
+        tr = ET.SubElement(track, "transitionitem")
+        _text(tr, "start", start)
+        _text(tr, "end", end)
+        _text(tr, "alignment", alignment)
+        tr.append(fr.element())
+        effect = ET.SubElement(tr, "effect")
+        for tag, value in (("name", "Cross Dissolve"), ("effectid", "Cross Dissolve"),
+                           ("effectcategory", "Dissolve"), ("effecttype", "transition"),
+                           ("mediatype", "video"), ("wipecode", 0), ("wipeaccuracy", 100),
+                           ("startratio", 0), ("endratio", 1), ("reverse", "FALSE")):  # fmt: skip
+            _text(effect, tag, value)
+
+    def main_track(track: ET.Element, clips: list[Item]) -> None:
+        """V1 with its dissolves: clip, transition, clip ..."""
+        half = fr(DISSOLVE_US) // 2
+        durations = {i: f.duration_us for i, f in files.items()}
+        joined = joins(clips, durations, dissolves, DISSOLVE_US // 2)
+        fade_in = fade and bool(clips) and clips[0].start == 0
+        fade_out = fade and bool(clips)
+        if fade_in:
+            transition(track, 0, 2 * half, "start-black")
+        for k, it in enumerate(clips):
+            before = half if k and joined[k - 1] else (0 if k == 0 and fade_in else None)
+            last = k == len(clips) - 1
+            after = half if not last and joined[k] else (0 if last and fade_out else None)
+            clipitem(track, it, "video", before=before, after=after)
+            if not last and joined[k]:
+                at = fr(clips[k + 1].start)
+                transition(track, at - half, at + half, "center")
+        if fade_out:
+            end = fr(clips[-1].end)
+            transition(track, end - 2 * half, end, "end-black")
+
+    main_track(ET.SubElement(video, "track"), sorted((i for i in items if i.track == "V1"),
+                                                     key=lambda i: i.start))  # fmt: skip
+    inserts = ET.SubElement(video, "track")
+    for it in items:
+        if it.track == "V2":
+            clipitem(inserts, it, "video")
     for group in ("A", "M"):  # live / reference sound, then music on its own tracks
         sound = [i for i in items if i.track == group]
         if not sound and group == "M":
@@ -131,6 +195,23 @@ def sequence_xml(
     ET.indent(root)
     body = ET.tostring(root, encoding="unicode")
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n' + body + "\n"
+
+
+def _time_remap(speed: float) -> ET.Element:
+    """Constant speed as FCP7 / Premiere write it (Clip > Speed/Duration)."""
+    flt = ET.Element("filter")
+    effect = ET.SubElement(flt, "effect")
+    for tag, value in (("name", "Time Remap"), ("effectid", "timeremap"),
+                       ("effectcategory", "motion"), ("effecttype", "motion"),
+                       ("mediatype", "video")):  # fmt: skip
+        _text(effect, tag, value)
+    for pid, value in (("variablespeed", 0), ("speed", f"{speed * 100:g}"),
+                       ("reverse", "FALSE"), ("frameblending", "FALSE")):  # fmt: skip
+        par = ET.SubElement(effect, "parameter")
+        _text(par, "parameterid", pid)
+        _text(par, "name", pid)
+        _text(par, "value", value)
+    return flt
 
 
 def _file(media_id: int, f: FileRef, fr: _Frames, *, full: bool) -> ET.Element:
@@ -164,8 +245,12 @@ def write_sequence(
     fps: float,
     width: int,
     height: int,
+    *,
+    dissolves: Sequence[int] = (),
+    fade: bool = False,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(sequence_xml(name, items, files, fps, width, height), encoding="utf-8")
+    text = sequence_xml(name, items, files, fps, width, height, dissolves=dissolves, fade=fade)
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)

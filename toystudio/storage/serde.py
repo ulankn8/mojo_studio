@@ -26,6 +26,7 @@ def _seg_to_obj(s: Segment) -> dict[str, Any]:
         "reasons": [{"code": r.code, "ru": r.ru, "ky": r.ky} for r in s.reasons],
         "text": s.text,
         "anchor_id": s.anchor_id,
+        "speed": s.speed,
     }
 
 
@@ -46,6 +47,7 @@ def _seg_from_obj(o: dict[str, Any]) -> Segment:
         reasons=tuple(Reason(r["code"], r["ru"], r["ky"]) for r in o["reasons"]),
         text=o["text"],
         anchor_id=o["anchor_id"],
+        speed=o.get("speed", 1.0),  # saved before slow motion existed
     )
 
 

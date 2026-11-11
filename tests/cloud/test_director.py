@@ -15,7 +15,7 @@ S = 1_000_000
 JPEG = b"\xff\xd8\xff\xe0fake-jpeg"
 
 
-def _clips(tmp_path, n: int = 3, frames: int = 2):
+def _clips(tmp_path, n: int = 3, frames: int = 2, fps: float = 0.0):
     out = []
     for i in range(n):
         paths = []
@@ -24,7 +24,7 @@ def _clips(tmp_path, n: int = 3, frames: int = 2):
             p.write_bytes(JPEG)
             paths.append(p)
         flags = ("трясётся",) if i == 1 else ()
-        out.append(AiClip(i + 1, round((5 + i) * S), flags, tuple(paths)))
+        out.append(AiClip(i + 1, round((5 + i) * S), flags, tuple(paths), fps))
     return out
 
 
@@ -44,7 +44,9 @@ class FakeClient:
 def _answer(stop="end_turn", parsed=True):
     plan = director._Plan(
         story="Сборы, встреча, крыша",
-        shots=[director._Shot(clip=2, start_pct=30, beats=3, part="intro", why="общий план")],
+        shots=[
+            director._Shot(clip=2, start_pct=30, beats=3, slow=True, part="intro", why="общий план")
+        ],
     )
     usage = SimpleNamespace(input_tokens=21000, output_tokens=7000)
     return SimpleNamespace(stop_reason=stop, parsed_output=plan if parsed else None,
@@ -66,6 +68,16 @@ def test_content_has_task_captions_and_frames(tmp_path):
     assert images[0]["source"]["media_type"] == "image/jpeg"
 
 
+def test_three_frames_and_the_frame_rate_while_they_fit(tmp_path):
+    content = build_content(_clips(tmp_path, n=4, frames=3, fps=50.0), tempo=98.0,
+                            beat_us=612_000, target_us=88 * S)  # fmt: skip
+    assert sum(b["type"] == "image" for b in content) == 12
+    assert content[1]["text"] == "Клип 1 · 5.0 с · 50 к/с"
+    many = build_content(_clips(tmp_path, n=120, frames=3), tempo=98.0, beat_us=612_000,
+                         target_us=88 * S)  # fmt: skip
+    assert sum(b["type"] == "image" for b in many) == 240  # 360 is over the limit: two each
+
+
 def test_many_clips_get_one_frame_each(tmp_path):
     content = build_content(_clips(tmp_path, n=200), tempo=0.0, beat_us=600_000, target_us=88 * S)
     assert sum(b["type"] == "image" for b in content) == 200
@@ -81,7 +93,7 @@ def test_plan_request_and_answer(tmp_path, monkeypatch):
     assert call["thinking"] == {"type": "adaptive"} and call["output_config"] == {"effort": "high"}
     assert call["fallbacks"] == "default" and call["output_format"] is director._Plan
     assert plan.story == "Сборы, встреча, крыша" and plan.shots[0].clip_id == 2
-    assert plan.shots[0].part == "intro" and plan.clips_sent == 3
+    assert plan.shots[0].part == "intro" and plan.shots[0].slow and plan.clips_sent == 3
     assert abs(plan.cost_usd - (21000 * 4 + 7000 * 20) / 1e6) < 1e-9
 
 
