@@ -227,3 +227,23 @@ def test_music_written_for_a_clip_is_chosen_and_ends_the_clip():
     (piece,) = _music_under([Shot(1, 0, 88 * S, False, r, 0)], {0: ai_sde})
     assert piece.src_out - piece.src_in == 88 * S
     assert 95 * S - piece.src_out < 652_000  # ends on the song's own ending (within a beat)
+
+
+def test_music_written_to_the_cut_lines_its_loudest_part_up_with_the_climax():
+    from toystudio.engine.edit.day import ENERGY_STEP_US, Shot, _music_under
+
+    r = Reason("x", "x", "x")
+    # a 60 s cut: calm 0-40 s, climax 40-50 s, outro 50-60 s
+    shots = [Shot(1, 0, 40 * S, False, r, 0, part="development"),
+             Shot(2, 0, 10 * S, False, r, 0, part="climax"),
+             Shot(3, 0, 10 * S, False, r, 0, part="outro")]  # fmt: skip
+    # a 100 s track, loud from 62 to 72 s: it should start at 22 s
+    energy = [0.4] * 200
+    for i in range(62 * S // ENERGY_STEP_US, 72 * S // ENERGY_STEP_US):
+        energy[i] = 1.0
+    for i in range(72 * S // ENERGY_STEP_US, 200):
+        energy[i] = 0.1
+    beats = Beats(120.0, tuple(range(0, 100 * S, 500_000)), 0.9)
+    track = MusicTrack(9, 100 * S, beats, "sde", True, tuple(energy))
+    (piece,) = _music_under(shots, {0: track})
+    assert abs(piece.src_in - 22 * S) <= S and piece.src_out - piece.src_in == 60 * S

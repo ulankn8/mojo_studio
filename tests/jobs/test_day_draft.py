@@ -143,8 +143,8 @@ def test_draft_from_an_ai_plan(tmp_path):
                                              for i in convoy))  # fmt: skip
     r = build_day_draft(root, "sde", ai_plan=plan)
     assert r.xml_path.name == "Свадьба · love story ИИ.xml"
-    # 10 shots x 3 beats x 0.6 s = 18 s; the last one runs on to its 10 s take's tail
-    assert r.stats.duration_us == 18 * S + (10 * S - 4_800_000 - TAIL_US)
+    # a teaser in front, 10 shots x 3 beats x 0.6 s = 18 s, the last one runs on to its take's tail
+    assert r.stats.duration_us > 18 * S + (10 * S - 4_800_000 - TAIL_US)
     saved = json.loads((root / "cache" / "ai" / "love_plan.json").read_text("utf-8"))
     assert saved["story"] == "Кортеж и встреча" and len(saved["shots"]) == 10
 
@@ -250,18 +250,22 @@ def test_love_story_avoids_hand_shake_measured_on_the_proxy(tmp_path):
     import numpy as np
 
     from toystudio.engine.analysis.single_pass import outputs_for
-    from toystudio.jobs.day_draft import _shaky
+    from toystudio.jobs.day_draft import _camera
 
     root = _project(tmp_path, drone_hours_off=0)
     s = ProjectStore.open(root)
     try:
         mid = s.list_media()[0].id
         make_clip(outputs_for(root / "cache", mid).proxy, duration_s=3, fps=50, size="320x180")
-        first = _shaky(s, {mid})
+        first = _camera(s, {mid})[mid]
         cached = root / "cache" / "jitter" / f"{mid}.npz"
-        assert cached.is_file() and first[mid] == []  # the test pattern scrolls smoothly
-        np.savez(cached, values=np.full(150, 3.0), fps=50.0)  # pretend the hand trembled
-        assert _shaky(s, {mid})[mid] == [(0, 3_000_000)]  # read from the cache, not decoded
+        assert cached.is_file() and first.shaky == []  # the test pattern does not shake
+        np.savez(cached, values=np.full(150, 3.0), motion=np.zeros(150), fps=50.0)
+        again = _camera(s, {mid})[mid]  # read from the cache, not decoded
+        assert again.shaky == [(0, 3_000_000)] and again.static
+        np.savez(cached, values=np.zeros(150), fps=50.0)  # an old cache without motion
+        _camera(s, {mid})
+        assert "motion" in np.load(cached)  # measured again
     finally:
         s.close()
 
@@ -328,12 +332,15 @@ def test_review_inputs_offer_other_moments_and_unused_takes(tmp_path):
                         *(AiShot(i, 30.0, 3, "development", "кортеж") for i in convoy)))  # fmt: skip
     build_day_draft(root, "sde", ai_plan=plan)
     shots = review_inputs(root)
-    assert [o.label for o in shots[0].options][:2] == ["A", "B"]
-    a, b = shots[0].options[:2]
+    assert shots[0].part == "teaser"  # the teaser is checked too
+    intro = next(s for s in shots if s.part == "intro")
+    assert [o.label for o in intro.options][:2] == ["A", "B"]
+    a, b = intro.options[:2]
     assert a.clip_id == b.clip_id and abs(a.start_pct - b.start_pct) > 10  # another moment
     assert all(o.frame.is_file() for s in shots for o in s.options[1:])  # B / C only if seen
-    assert len(shots) == len(plan.shots)  # every shot is there, also one without a frame
-    takes = [next((o.clip_id for o in s.options if o.label == "C"), None) for s in shots]
+    assert len(shots) > len(plan.shots)  # every shot is there (with the teaser), framed or not
+    takes = [next((o.clip_id for o in s.options if o.label == "C"), None) for s in shots
+             if s.part != "teaser"]  # fmt: skip
     used = {long_take, *convoy}
     assert all(takes) and not (set(takes) & used)  # every shot gets an unused take
     assert all(a != b for a, b in pairwise(takes))  # not the one the shot before got

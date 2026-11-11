@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-Part = Literal["intro", "development", "climax", "outro"]
+Part = Literal["teaser", "intro", "development", "climax", "outro"]
 OptionLabel = Literal["A", "B", "C"]
 _PARTS: dict[str, Part] = {
+    "teaser": "teaser",
     "intro": "intro",
     "development": "development",
     "climax": "climax",
@@ -48,6 +49,7 @@ class AiPlan:
     input_tokens: int = 0
     output_tokens: int = 0
     clips_sent: int = 0
+    revised: bool = False  # a built cut frozen back into a plan: its teaser and pace are in it
 
     @property
     def cost_usd(self) -> float:
@@ -100,3 +102,17 @@ class AiReview:
     @property
     def cost_usd(self) -> float:
         return (self.input_tokens * 4.0 + self.output_tokens * 20.0) / 1_000_000
+
+
+# --- the shape of a cut, for music written to it
+
+MusicMood = Literal["teaser", "intro", "calm", "tender", "pace", "climax", "outro"]
+
+
+@dataclass(frozen=True)
+class MusicSection:
+    """A stretch of the cut with one atmosphere: what the music should do there."""
+
+    start_us: int
+    end_us: int
+    mood: MusicMood

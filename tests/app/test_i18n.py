@@ -61,7 +61,7 @@ def test_lupdate_keeps_all_translations(tmp_path):
     subprocess.run([lupdate, *sources, "-ts", str(ts)], check=True, capture_output=True)
     text = ts.read_text("utf-8")
     assert 'type="vanished"' not in text and 'type="obsolete"' not in text
-    assert text.count("<message>") == 248
+    assert text.count("<message>") == 250
     assert "needs native-speaker review" in text
     assert "Долбоорлор" in text and "Кара көчүрмө" in text
 

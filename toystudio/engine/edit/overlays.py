@@ -1,8 +1,8 @@
 """Light overlays of a clip (waves, lines, leaks, bokeh, a sweep), placed as an editor would.
 
 The overlays are short videos of light on black (tools/overlays, Remotion), laid over the
-film in "screen" mode: black disappears, light adds. Placement: a warm leak over the
-opening, light lines over a few dissolves (at most 3, 15 s apart), a sweep on the climax's first beat, bokeh over the
+film in "screen" mode: black disappears, light adds. Placement: a flash out of the teaser, a warm leak over the
+story's opening, light lines over a few dissolves (at most 3, 15 s apart), a sweep on the climax's first beat, bokeh over the
 first slow shot of the middle, waves over the ending; each starts on a beat and none overlaps
 another.
 """
@@ -50,7 +50,14 @@ def place(draft: DayDraft) -> list[Item]:
         return next((t for s, t in zip(draft.shots, starts, strict=True)
                      if s.part == part and t >= after), None)  # fmt: skip
 
-    wanted: list[tuple[str, int]] = [("leak", 0)]
+    story = next((t for s, t in zip(draft.shots, starts, strict=True) if s.part != "teaser"), 0)
+    sweep_len = OVERLAYS["sweep"][1]
+    # with a teaser: a flash out of it, the warm leak over the story's opening
+    wanted: list[tuple[str, int]] = (
+        [("sweep", story - sweep_len // 2), ("leak", story + sweep_len // 2)]
+        if story
+        else [("leak", 0)]
+    )
     climax = first("climax")
     if climax is not None:
         wanted.append(("sweep", climax))

@@ -9,11 +9,14 @@ environment (GEMINI_API_KEY or GOOGLE_API_KEY) and is never stored by the progra
 from __future__ import annotations
 
 import base64
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from google import genai
 from google.genai import errors
+
+from toystudio.core.ai_plan import MusicSection
 
 try:  # the interactions API raises its own errors, from a private module of the SDK
     from google.genai._gaos.lib.compat_errors import GeminiNextGenAPIClientError
@@ -73,6 +76,34 @@ def music_prompt(seconds: float, mood: str, bpm: int) -> str:
     )
 
 
+# what the music does in each stretch of the cut
+SECTION_TEXT: dict[str, str] = {
+    "teaser": "Teaser: bright and energetic, quick accents on every beat, a short burst",
+    "intro": "Intro: soft and sparse, the theme appears",
+    "calm": "Calm: gentle, flowing, the theme develops",
+    "tender": "Tender: intimate, softer, slow emotional phrase",
+    "pace": "Lively: rhythm and light percussion come in, more movement",
+    "climax": "Climax: the fullest, most emotional moment, strong accents",
+    "outro": "Outro: calm, the theme once more, settling",
+}
+
+
+def prompt_for_cut(sections: Sequence[MusicSection], mood: str, bpm: int) -> str:
+    """The prompt for music written to a finished cut: its stretches with their atmosphere,
+    in timestamps, then a clear final chord (with 3 s to ring out)."""
+    end = sections[-1].end_us / 1_000_000 if sections else 0.0
+    lines = [f"[{_ts(s.start_us / 1_000_000)} - {_ts(s.end_us / 1_000_000)}] {SECTION_TEXT[s.mood]}"
+             for s in sections]  # fmt: skip
+    lines.append(
+        f"[{_ts(end)} - {_ts(end + 3)}] Ending: a clear final chord rings out, no fade-out"
+    )
+    return (
+        f"Instrumental only, no vocals. {MOODS.get(mood, MOODS['romantic'])}. "
+        f"Tempo {bpm} BPM, steady beat. The music follows a wedding film's edit: change "
+        f"exactly at these timestamps. Total length {_ts(end + 3)}.\n" + "\n".join(lines)
+    )
+
+
 def _client() -> genai.Client:
     try:
         # Lyria is served by the v1beta API (v1 answers "model not found")
@@ -93,13 +124,22 @@ def _code(e: Exception) -> str:
     return "bad_request"
 
 
-def compose(seconds: float, *, mood: str = "romantic", bpm: int = 92) -> AiMusic:
-    """Ask Lyria for the clip's music; raises ComposerError with a code the GUI can explain."""
+def compose(
+    seconds: float,
+    *,
+    mood: str = "romantic",
+    bpm: int = 92,
+    sections: Sequence[MusicSection] = (),
+) -> AiMusic:
+    """Ask Lyria for the clip's music - shaped like a clip in general, or, given `sections` of
+    a finished cut, following its atmosphere; raises ComposerError with a code the GUI can
+    explain."""
     client = _client()
+    prompt = prompt_for_cut(sections, mood, bpm) if sections else music_prompt(seconds, mood, bpm)
     try:
         interaction = client.interactions.create(
             model=MODEL,
-            input=music_prompt(seconds, mood, bpm),
+            input=prompt,
             response_format={"type": "audio"},
         )
     except (errors.APIError, GeminiNextGenAPIClientError, OSError) as e:

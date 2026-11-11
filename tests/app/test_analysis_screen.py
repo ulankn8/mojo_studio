@@ -1083,31 +1083,53 @@ def test_ai_music_menu_writes_music_in_the_background(
     assert not screen.music_button.isHidden() and vm.music_kinds == ("sde",)
     actions = screen.music_menu.actions()
     assert [a.text() for a in actions] == [
+        "Love Story · по атмосфере клипа",
         "Love Story · романтичное кино",
         "Love Story · лёгкое и светлое",
         "Love Story · эпичное",
     ]
     asked = []
 
-    def fake_compose(seconds, *, mood, bpm):
-        asked.append((seconds, mood, bpm))
+    def fake_compose(seconds, *, mood, bpm, sections=()):
+        asked.append((seconds, mood, bpm, tuple(sections)))
         return AiMusic(b"mp3")
 
     monkeypatch.setattr(avm, "compose", fake_compose)
     monkeypatch.setattr(avm, "add_ai_music", lambda root, audio, kind, mood: tmp_path / "x.mp3")
-    actions[2].trigger()
+    actions[3].trigger()
     assert vm.music_busy and "пишет музыку" in screen.draft_label.text()
     qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
-    assert asked == [(91.0, "epic", 92)]  # 3 s of margin for the lead-in
+    assert asked == [(91.0, "epic", 92, ())]  # 3 s of margin for the lead-in
+
     assert "Музыка готова: x.mp3" in screen.draft_label.text()
 
     def no_key(*_a, **_k):
         raise ComposerError("no_key")
 
     monkeypatch.setattr(avm, "compose", no_key)
-    actions[0].trigger()
+    actions[1].trigger()
     qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
     assert "setx GEMINI_API_KEY" in screen.draft_label.text()
+
+    # written to the clip as it is cut: its sections go to the composer
+    from toystudio.core.ai_plan import MusicSection
+
+    cut = [MusicSection(0, 4_000_000, "teaser"), MusicSection(4_000_000, 88_000_000, "calm")]
+    monkeypatch.setattr(avm, "cut_sections", lambda _root, _kind, **_k: cut)
+    monkeypatch.setattr(avm, "compose", fake_compose)
+    actions[0].trigger()
+    qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
+    assert asked[-1][3] == tuple(cut) and asked[-1][1] == "romantic"
+
+    from toystudio.jobs.restaurant_draft import DraftError
+
+    def no_cut(*_a, **_k):
+        raise DraftError("no_plan")
+
+    monkeypatch.setattr(avm, "cut_sections", no_cut)
+    actions[0].trigger()
+    qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
+    assert "Сначала соберите клип" in screen.draft_label.text()
 
 
 def test_ai_check_swaps_weak_shots_and_survives_its_own_failure(

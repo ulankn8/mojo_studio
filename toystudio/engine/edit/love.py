@@ -20,6 +20,7 @@ from toystudio.engine.edit.day import (
     JUMP_MAX,
     SLOW,
     TAIL_US,
+    TEASER_FLASHES,
     DayClip,
     DayDraft,
     MusicTrack,
@@ -29,6 +30,8 @@ from toystudio.engine.edit.day import (
     _stats,
     _timeline,
     dissolves,
+    finish,
+    styles,
 )
 
 MAX_BEATS = 8
@@ -53,6 +56,9 @@ def checked(plan: AiPlan, looks: Mapping[int, int] | None = None) -> list[AiShot
     uses: dict[int, int] = {}
     kept: list[AiShot] = []
     for s in plan.shots:
+        if s.part == "teaser":  # flashes of other moments: not a use of the take
+            kept.append(s)
+            continue
         if s.part == "climax":
             jumps[s.clip_id] = jumps.get(s.clip_id, 0) + 1
             if jumps[s.clip_id] > JUMP_MAX:
@@ -91,15 +97,23 @@ def build_from_plan(
     track: MusicTrack | None,
     target_us: int,
     looks: Mapping[int, int] | None = None,
+    *,
+    with_teaser: bool = True,
+    lively: bool = True,
 ) -> DayDraft:
+    """The plan cut to the beat, checked and fitted to `target_us`; `lively` adds the teaser
+    in front and the dynamics (moves, faster aerials, quick pairs) - see day.finish."""
     by_id = {c.media_id: c for c in clips}
     beat = track.beat_us if track else FALLBACK_BEAT_US
+    with_teaser = with_teaser and lively and not plan.revised  # a frozen cut has it already
+    if with_teaser:  # the teaser comes out of the clip's length, in front of the story
+        target_us -= TEASER_FLASHES * beat
     # a plan written in fractions (0.3) instead of percent (30): every start is <= 1
     scale = 100.0 if plan.shots and max(s.start_pct for s in plan.shots) <= 1.0 else 1.0
     shots: list[Shot] = []
     used: dict[int, list[tuple[int, int]]] = {}
     total = 0
-    order = checked(plan, looks)
+    order = list(plan.shots) if plan.revised else checked(plan, looks)  # a frozen cut: checked
     # a plan longer than the clip loses shots from the middle: the climax and the end stay
     ending = sum(
         _beats(s) * beat for s in order if s.part in ("climax", "outro") and s.clip_id in by_id
@@ -137,10 +151,13 @@ def build_from_plan(
         if grow > 0:
             shots[-1] = Shot(last.media_id, last.src_in, last.src_out + grow, False, last.reason,
                              0, last.speed, last.part)  # fmt: skip
+    if shots and lively:
+        shots = finish(shots, by_id, beat, with_teaser=with_teaser, pace=not plan.revised)
     music = _music_under(shots, {0: track})
     source = [by_id[i] for i in {s.media_id for s in shots}]
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), ("love",),
-                    _stats(shots, source, 1), dissolves(shots), True, beat)  # fmt: skip
+                    _stats(shots, source, 1), dissolves(shots), True, beat,
+                    styles(shots))  # fmt: skip
 
 
 def revised_plan(plan: AiPlan, shots: list[ReviewShot], review: AiReview) -> AiPlan:
@@ -161,4 +178,4 @@ def revised_plan(plan: AiPlan, shots: list[ReviewShot], review: AiReview) -> AiP
         if o.label == "C":
             taken.add(o.clip_id)
         out.append(AiShot(o.clip_id, o.start_pct, s.beats, s.part, s.why, o.speed != 1.0))
-    return replace(plan, shots=tuple(out))
+    return replace(plan, shots=tuple(out), revised=True)

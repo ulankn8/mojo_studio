@@ -1,5 +1,7 @@
 """A finished clip from the layout: length, frame rate, sound, slow motion, dissolves, colour."""
 
+from dataclasses import replace
+
 from tests.media_fixtures import make_clip, needs_ffmpeg
 from toystudio.engine.color.grade import ClipGrade, write_cube
 from toystudio.engine.edit.restaurant import Item
@@ -31,7 +33,7 @@ def test_clip_with_slow_motion_dissolve_colour_and_music(tmp_path):
     durations = {k: 6 * S for k in (1, 2, 3)} | {9: 10 * S}
     lut = write_cube(tmp_path / "1.cube", ClipGrade(0.02, 1.1, (1.03, 1.0, 0.96)))
     out = render_film(items, src, durations, tmp_path / "out" / "SDE.mp4", luts={1: lut},
-                      dissolves=[4 * S], settings=SMALL)  # fmt: skip
+                      transitions={4 * S: "fade"}, settings=SMALL)  # fmt: skip
     info = probe_media(out)
     assert abs(info.duration_us - 6 * S) <= 0.1 * S
     assert info.width == 320 and info.height == 180 and round(info.fps) == 25
@@ -94,3 +96,39 @@ def test_light_overlay_brightens_its_moment_and_keeps_the_length(tmp_path):
         return sum(raw) / len(raw)
 
     assert luma(3.0) > luma(1.0) + 60  # screen-mode light lifts the dark picture
+
+
+@needs_ffmpeg
+def test_moves_whip_and_flash_to_white_keep_the_length(tmp_path):
+    from toystudio.engine.render.film import _move_filter
+
+    src = _sources(tmp_path)
+    items = [
+        Item("V1", 1, 1 * S, 2 * S, 0, 1 * S),  # a teaser flash
+        Item("V1", 2, 2 * S, 4 * S, 1 * S, 3 * S, move="in"),
+        Item("V1", 2, 4.5 * S, 5.5 * S, 3 * S, 4 * S, move="turn"),  # a quick pair
+    ]
+    out = render_film([replace(i, src_in=int(i.src_in), src_out=int(i.src_out)) for i in items],
+                      src, {1: 6 * S, 2: 6 * S}, tmp_path / "x.mp4", settings=SMALL,
+                      transitions={1 * S: "white", 3 * S: "whip"})  # fmt: skip
+    assert abs(probe_media(out).duration_us - 4 * S) <= 0.1 * S
+    zoom = _move_filter("in", 320, 180, 2.0)
+    assert (
+        zoom[0].startswith("scale=w='trunc(320*(1+0.08*(t/2.0000))") and zoom[1] == "crop=320:180"
+    )
+    assert any(f.startswith("rotate=") for f in _move_filter("turn", 320, 180, 2.0))
+
+
+def test_storage_keeps_moves_and_reads_old_timelines():
+    import json
+
+    from toystudio.core.models import Track
+    from toystudio.core.timeline import Segment, Timeline
+    from toystudio.storage.serde import timeline_from_json, timeline_to_json
+
+    seg = Segment("v0", Track.VIDEO, "7", 0, S, None, 0, 2 * S, move="out")
+    t = Timeline(video=(seg,))
+    assert timeline_from_json(timeline_to_json(t)).video[0].move == "out"
+    obj = json.loads(timeline_to_json(t))
+    del obj["video"][0]["move"]
+    assert timeline_from_json(json.dumps(obj)).video[0].move == ""

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from toystudio.core.models import US_PER_S
 from toystudio.engine.edit.restaurant import Item, joins
-from toystudio.engine.export.premiere_xml import DISSOLVE_US
+from toystudio.engine.export.premiere_xml import move_keys
 from toystudio.engine.media.ffmpeg import find_tool, has_filter, popen_flags
 
 FADE_US = 600_000
@@ -73,6 +73,8 @@ def _shot_filter(it: Item, lut: Path | None, st: RenderSettings, frames: int) ->
         parts.append(f"lut3d=file={_lut_path(lut)}")
     parts += [f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos",
               f"crop={w}:{h}", "setsar=1", f"fps={st.fps}"]  # fmt: skip
+    if it.move:
+        parts += _move_filter(it.move, w, h, frames / st.fps)
     if st.sharpen:
         parts.append(f"cas=strength={st.sharpen:g}")
     if st.vignette:
@@ -85,6 +87,22 @@ def _shot_filter(it: Item, lut: Path | None, st: RenderSettings, frames: int) ->
     return ",".join(parts)
 
 
+def _move_filter(move: str, w: int, h: int, seconds: float) -> list[str]:
+    """A slow push-in / pull-out / turn over the shot (the same keys as the XML's Basic Motion):
+    the frame is scaled per frame, cropped back to the size, and turned with no corner showing."""
+    (s0, s1), (r0, r1) = move_keys(move)
+    t = f"(t/{max(seconds, 0.04):.4f})"
+    zoom = f"({s0 / 100:g}+{(s1 - s0) / 100:g}*{t})"
+    out = [f"scale=w='trunc({w}*{zoom}/2)*2':h=-2:eval=frame:flags=bicubic", f"crop={w}:{h}"]
+    if r0 != r1:
+        rad = 3.141592653589793 / 180
+        out.append(f"rotate=a='{r0 * rad:.5f}+{(r1 - r0) * rad:.5f}*{t}':ow={w}:oh={h}")
+    return out
+
+
+XFADE = {"fade": "fade", "white": "fadewhite", "whip": "smoothleft"}
+
+
 def render_film(
     items: Sequence[Item],
     sources: Mapping[int, Path],
@@ -92,7 +110,7 @@ def render_film(
     out: Path,
     *,
     luts: Mapping[int, Path] | None = None,
-    dissolves: Sequence[int] = (),
+    transitions: Mapping[int, str] | None = None,
     fade: bool = True,
     settings: RenderSettings | None = None,
     work: Path | None = None,
@@ -110,19 +128,20 @@ def render_film(
     if st.sharpen and not has_filter("cas"):
         st = replace(st, sharpen=0.0)
     xfade = has_filter("xfade")
-    half = DISSOLVE_US // 2
-    joined = joins(shots, durations, dissolves, half) if xfade else [False] * (len(shots) - 1)
 
     def frame(us: int) -> int:
         return round(us * st.fps / US_PER_S)
 
-    hf = frame(half)
+    cuts = transitions or {}
+    halves = [frame(h) for h in joins(shots, durations, cuts)] if xfade else []
+    halves = halves or [0] * (len(shots) - 1)
+    styles = [XFADE[cuts[b.start]] if h else "" for h, b in zip(halves, shots[1:], strict=True)]
 
     def cut(k: int, it: Item) -> Path:
         if should_stop():
             raise RenderStopped
-        before = hf if k and joined[k - 1] else 0
-        after = hf if k < len(shots) - 1 and joined[k] else 0
+        before = halves[k - 1] if k else 0
+        after = halves[k] if k < len(shots) - 1 else 0
         frames = frame(it.end) - frame(it.start) + before + after
         src_in = it.src_in - round(before * US_PER_S / st.fps * it.speed)
         src_len = round(frames * US_PER_S / st.fps * it.speed) + US_PER_S // st.fps
@@ -148,11 +167,13 @@ def render_film(
                 f.cancel()
             raise
     pieces = [f.result() for f in futures]
-    # runs of hard cuts, joined to each other by dissolves
+    # runs of hard cuts, joined to each other by transitions
     runs: list[list[Path]] = [[pieces[0]]]
+    joints: list[tuple[int, str]] = []  # (half in frames, xfade name) between runs
     for k, piece in enumerate(pieces[1:]):
-        if joined[k]:
+        if halves[k]:
             runs.append([piece])
+            joints.append((halves[k], styles[k]))
         else:
             runs[-1].append(piece)
     run_files: list[tuple[Path, int]] = []
@@ -167,8 +188,9 @@ def render_film(
     last = "[0:v]"
     length = run_files[0][1]
     for n in range(1, len(run_files)):
+        hf, name = joints[n - 1]
         offset = (length - 2 * hf) / st.fps
-        graph.append(f"{last}[{n}:v]xfade=transition=fade:duration={2 * hf / st.fps:.4f}"
+        graph.append(f"{last}[{n}:v]xfade=transition={name}:duration={2 * hf / st.fps:.4f}"
                      f":offset={offset:.4f}[x{n}]")  # fmt: skip
         last = f"[x{n}]"
         length += run_files[n][1] - 2 * hf

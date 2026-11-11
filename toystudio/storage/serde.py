@@ -27,6 +27,7 @@ def _seg_to_obj(s: Segment) -> dict[str, Any]:
         "text": s.text,
         "anchor_id": s.anchor_id,
         "speed": s.speed,
+        "move": s.move,
     }
 
 
@@ -48,6 +49,7 @@ def _seg_from_obj(o: dict[str, Any]) -> Segment:
         text=o["text"],
         anchor_id=o["anchor_id"],
         speed=o.get("speed", 1.0),  # saved before slow motion existed
+        move=o.get("move", ""),
     )
 
 

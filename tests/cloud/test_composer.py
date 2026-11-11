@@ -98,3 +98,32 @@ def test_no_key_is_explained(monkeypatch):
     with pytest.raises(ComposerError) as e:
         compose(88)
     assert e.value.code == "no_key"
+
+
+def test_prompt_for_a_cut_follows_its_atmosphere():
+    from toystudio.cloud.composer import prompt_for_cut
+    from toystudio.core.ai_plan import MusicSection
+
+    cut = [
+        MusicSection(0, 4_200_000, "teaser"),
+        MusicSection(4_200_000, 12_000_000, "intro"),
+        MusicSection(12_000_000, 40_000_000, "calm"),
+        MusicSection(40_000_000, 52_000_000, "pace"),
+        MusicSection(52_000_000, 66_000_000, "tender"),
+        MusicSection(66_000_000, 80_000_000, "climax"),
+        MusicSection(80_000_000, 88_000_000, "outro"),
+    ]
+    text = prompt_for_cut(cut, "romantic", 92)
+    assert "[0:00 - 0:04] Teaser: bright and energetic" in text
+    assert "[0:40 - 0:52] Lively: rhythm and light percussion" in text
+    assert "[1:06 - 1:20] Climax" in text and "[1:28 - 1:31] Ending" in text
+    assert "Total length 1:31" in text and "92 BPM" in text and "no vocals" in text
+
+
+def test_compose_sends_the_cut_prompt_when_given_sections(monkeypatch):
+    from toystudio.core.ai_plan import MusicSection
+
+    fake = FakeClient(answer=_answer())
+    monkeypatch.setattr(composer, "_client", lambda: fake)
+    compose(91, sections=[MusicSection(0, 88_000_000, "calm")])
+    assert "[0:00 - 1:28] Calm" in fake.calls[0]["input"]

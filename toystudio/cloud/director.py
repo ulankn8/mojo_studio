@@ -37,6 +37,9 @@ Shots are 1-4 beats of the music long (median about 3 beats). Start each shot wh
 show the best moment (the frames are at 10, 50 and 90 % of the clip). Skip clips noted as \
 shaky or blurry. Never put two near-identical shots side by side, use a clip at most twice, \
 keep at most three shots in a row in one place, and alternate wide, medium and close shots.
+Vary the pace: calm passages of 3-4-beat shots, and at least two quick passages of \
+1-2-beat shots (a walk, laughter, the dress in motion). The program adds a teaser of the \
+best moments in front of your plan by itself - do not plan one.
 Mark `slow` the emotional shots that gain from half speed: embraces, the veil, a look, a \
 walk, hair or dress in the wind, a kiss - about a third of the shots, never in the climax. \
 Only clips of 50 fps or more can be slowed; others play at real speed.

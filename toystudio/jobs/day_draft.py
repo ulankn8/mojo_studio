@@ -24,6 +24,7 @@ from toystudio.core.ai_plan import (
     AiPlan,
     AiReview,
     AiShot,
+    MusicSection,
     OptionLabel,
     ReviewOption,
     ReviewShot,
@@ -32,12 +33,13 @@ from toystudio.core.ai_plan import (
 from toystudio.core.clock import camera_spans, reference_camera, shot_time, suspicious
 from toystudio.core.models import US_PER_S, AudioLabel, MediaInfo, MediaRole, MediaRow, MediaStatus
 from toystudio.engine.analysis import single_pass
-from toystudio.engine.analysis.jitter import jitter, shaky_spans
+from toystudio.engine.analysis.jitter import is_static, measure, shaky_spans
 from toystudio.engine.analysis.single_pass import outputs_for
 from toystudio.engine.audio.beats import CONFIDENT, ENV_HZ, Beats, beats_from_envelope
 from toystudio.engine.color.grade import LOOK_NAME, balance, chroma, film_chroma, write_cube
 from toystudio.engine.edit.day import (
     CLIP_FPS,
+    ENERGY_STEP_US,
     FALLBACK_BEAT_US,
     HEAD_US,
     SDE_US,
@@ -49,6 +51,7 @@ from toystudio.engine.edit.day import (
     build_film,
     day_layout,
     love_source,
+    music_sections,
     slow_track,
 )
 from toystudio.engine.edit.love import build_from_plan
@@ -76,6 +79,7 @@ AI_FRAME_AT = (0.1, 0.5, 0.9)  # beginning, middle and end: where the best momen
 PLAN_FILE = "love_plan.json"
 REVIEW_FILE = "love_review.json"
 AI_MUSIC = "T-Studio ИИ"  # file names of the AI's music: "T-Studio ИИ · sde · romantic · <time>"
+FIT_MOOD = "fit"  # the mood token of music written to a finished cut's sections
 AUDIBLE = 0.05  # of the loudest moment (about -26 dB): where a track's music begins
 # the clip each AI piece is written for: (length, tempo); 3 s more than the clip, as a
 # margin for the silent lead-in AI music has (the clip ends on the music's own ending)
@@ -169,8 +173,20 @@ def _music(store: ProjectStore) -> list[MusicTrack]:
         hint = CLIP_MUSIC[made_for][1] if made_for else None  # the tempo it was written to
         env = np.load(out.envelope)
         beats = _audible(beats_from_envelope(env, tempo_hint=hint), env)
-        tracks.append(MusicTrack(m.id, info.duration_us, beats, made_for))
+        fitted = bool(made_for) and m.path.stem.split(" · ")[2:3] == [FIT_MOOD]
+        tracks.append(MusicTrack(m.id, info.duration_us, beats, made_for, fitted, _energy(env)))
     return tracks
+
+
+def _energy(env: np.ndarray) -> tuple[float, ...]:
+    """Loudness every ENERGY_STEP_US (in dB, scaled 0..1 over the track's own range)."""
+    step = ENV_HZ * ENERGY_STEP_US // US_PER_S
+    n = len(env) // step
+    if n == 0:
+        return ()
+    db = 20 * np.log10(np.asarray(env[: n * step]).reshape(n, step).mean(axis=1) + 1e-6)
+    lo, hi = float(np.percentile(db, 5)), float(db.max())
+    return tuple(float(x) for x in np.clip((db - lo) / max(hi - lo, 1e-6), 0, 1))
 
 
 def _audible(beats: Beats, env: np.ndarray) -> Beats:
@@ -240,37 +256,44 @@ def _flags(store: ProjectStore, m: MediaRow) -> tuple[str, ...]:
                  if k in _FLAG_TEXT and dur and v / dur >= AI_FLAG_SHARE)  # fmt: skip
 
 
-def _shaky(store: ProjectStore, ids: set[int]) -> dict[int, list[tuple[int, int]]]:
-    """Hand-shake stretches of the clips, measured at the full frame rate on the proxy
-    (cached: cache/jitter/{id}.npz); a clip without a proxy is not measured."""
+@dataclass(frozen=True)
+class _Camera:
+    shaky: list[tuple[int, int]]  # hand-shake stretches (µs)
+    static: bool  # the camera stood still: such shots get a slow push-in or turn
+
+
+def _camera(store: ProjectStore, ids: set[int]) -> dict[int, _Camera]:
+    """Shake and motion of the clips, measured at the full frame rate on the proxy (cached:
+    cache/jitter/{id}.npz); a clip without a proxy is not measured."""
     cache = store.root / "cache"
     rows = {m.id: m for m in store.list_media() if m.id in ids}
-    out: dict[int, list[tuple[int, int]]] = {}
+    out: dict[int, _Camera] = {}
     for mid, m in rows.items():
         saved = cache / "jitter" / f"{mid}.npz"
         fps = min(m.info.fps if m.info and m.info.fps else 25.0, 50.0)
-        if saved.is_file():
-            data = np.load(saved)
-            values, fps = data["values"], float(data["fps"])
-        else:
+        data = np.load(saved) if saved.is_file() else None
+        if data is not None and "motion" in data:
+            values, motion, fps = data["values"], data["motion"], float(data["fps"])
+        else:  # not measured yet, or measured before motion was kept
             proxy = outputs_for(cache, mid).proxy
             if not proxy.is_file():
                 continue
             try:
-                values = jitter(proxy, fps)
+                values, motion = measure(proxy, fps)
             except RuntimeError:
                 continue
             saved.parent.mkdir(parents=True, exist_ok=True)
-            np.savez(saved, values=values, fps=fps)
-        out[mid] = shaky_spans(values, fps)
+            np.savez(saved, values=values, motion=motion, fps=fps)
+        out[mid] = _Camera(shaky_spans(values, fps), is_static(motion))
     return out
 
 
 def _steady(store: ProjectStore, clips: list[DayClip], ids: set[int]) -> list[DayClip]:
-    """`clips` with the hand-shake stretches of `ids` among their bad frames."""
-    spans = _shaky(store, ids)
-    return [replace(c, bad=c.bad + tuple(spans[c.media_id])) if spans.get(c.media_id) else c
-            for c in clips]  # fmt: skip
+    """`clips` with the hand-shake stretches of `ids` among their bad frames, and whether
+    their camera stood still."""
+    cams = _camera(store, ids)
+    return [replace(c, bad=c.bad + tuple(cams[c.media_id].shaky), static=cams[c.media_id].static)
+            if c.media_id in cams else c for c in clips]  # fmt: skip
 
 
 def _ai_frame(cache: Path, media_id: int, at: float) -> Path:
@@ -429,6 +452,18 @@ def _option(
     return ReviewOption(label, c.media_id, pct, speed, frame)
 
 
+def cut_sections(root: Path, kind: str, *, skip_clocks: bool = False) -> list[MusicSection]:
+    """The atmosphere of the clip as it is cut now (the AI love story from its saved plan,
+    else the rules' clip), for music written to it."""
+    plan = saved_plan(root) if kind == "sde" else None
+    store = ProjectStore.open(root)
+    try:
+        b = _built(store, "sde" if kind == "sde" else "express", skip_clocks, plan)
+        return music_sections(b.draft)
+    finally:
+        store.close()
+
+
 def save_review(root: Path, review: AiReview) -> None:
     """The AI's check of the cut, kept next to its plan (what was swapped and why)."""
     folder = root / "cache" / "ai"
@@ -479,7 +514,7 @@ def build_day_draft(
         files |= _overlay_refs(xml.parent, items)
         clip = draft.fade  # SDE / express / love story: 25p, dissolves, the look
         write_sequence(xml, name, items, files, CLIP_FPS if clip else lead.fps, lead.width,
-                       lead.height, dissolves=draft.dissolves, fade=draft.fade)  # fmt: skip
+                       lead.height, transitions=draft.transitions, fade=draft.fade)  # fmt: skip
         if clip:
             write_cube(xml.parent / f"{LOOK_NAME}.cube")
         return DraftResult(xml, cut_id, draft.stats)
@@ -581,7 +616,7 @@ def render_draft(
         settings = RenderSettings.preview() if preview else RenderSettings()
         sources |= {i.media_id: overlay_asset(i.media_id) for i in lights}
         video = render_film(items + lights, sources, durations, out, luts=luts,
-                            dissolves=b.draft.dissolves, fade=b.draft.fade, settings=settings,
+                            transitions=b.draft.transitions, fade=b.draft.fade, settings=settings,
                             work=cache / "render", on_progress=on_progress,
                             should_stop=should_stop)  # fmt: skip
         return RenderResult(video, from_proxy)

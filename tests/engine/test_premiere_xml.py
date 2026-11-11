@@ -116,7 +116,7 @@ def test_slow_motion_is_a_time_remap_with_half_the_source():
 
 def test_dissolve_reaches_into_both_handles_and_fades_from_and_to_black():
     items = [Item("V1", 3, 10 * S, 14 * S, 0, 4 * S), Item("V1", 4, 20 * S, 24 * S, 4 * S, 8 * S)]
-    track = _v1(items, dissolves=[4 * S], fade=True)
+    track = _v1(items, transitions={4 * S: "fade"}, fade=True)
     kinds = [el.tag for el in track]
     assert kinds == ["transitionitem", "clipitem", "transitionitem", "clipitem", "transitionitem"]
     fade_in, mid, fade_out = track.findall("transitionitem")
@@ -131,7 +131,7 @@ def test_dissolve_reaches_into_both_handles_and_fades_from_and_to_black():
 
 def test_dissolve_without_handles_stays_a_cut():
     items = [Item("V1", 3, 56 * S, 60 * S, 0, 4 * S), Item("V1", 4, 0, 4 * S, 4 * S, 8 * S)]
-    track = _v1(items, dissolves=[4 * S])
+    track = _v1(items, transitions={4 * S: "fade"})
     assert track.find("transitionitem") is None
     assert [c.findtext("start") for c in track.findall("clipitem")] == ["0", "100"]
 
@@ -149,3 +149,23 @@ def test_light_overlay_is_screen_mode_with_opacity_on_v2():
     assert light.find("filter/effect/effectid").text == "opacity"
     assert light.find("filter/effect/parameter/value").text == "80"
     assert v1.find("clipitem/compositemode") is None  # V1 stays normal
+
+
+def test_moves_are_basic_motion_keyframes_and_whips_are_short_dissolves():
+    items = [Item("V1", 3, 10 * S, 14 * S, 0, 4 * S, move="in"),
+             Item("V1", 4, 20 * S, 24 * S, 4 * S, 8 * S, move="turn")]  # fmt: skip
+    track = _v1(items, transitions={4 * S: "whip"})
+    a, b = track.findall("clipitem")
+    scale = next(p for p in a.find("filter/effect").findall("parameter")
+                 if p.findtext("parameterid") == "scale")  # fmt: skip
+    assert a.find("filter/effect/effectid").text == "basic"
+    assert [k.findtext("value") for k in scale.findall("keyframe")] == ["100", "108"]
+    assert [k.findtext("when") for k in scale.findall("keyframe")] == [
+        a.findtext("in"),
+        a.findtext("out"),
+    ]
+    rot = next(p for p in b.find("filter/effect").findall("parameter")
+               if p.findtext("parameterid") == "rotation")  # fmt: skip
+    assert [k.findtext("value") for k in rot.findall("keyframe")] == ["-1.5", "1.5"]
+    (whip,) = track.findall("transitionitem")
+    assert int(whip.findtext("end")) - int(whip.findtext("start")) == 6  # 0.24 s at 25 fps

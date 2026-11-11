@@ -32,6 +32,7 @@ class Segment:
     text: str | None = None
     anchor_id: str | None = None
     speed: float = 1.0  # 0.5 = slow motion: half a second of the source per second on screen
+    move: str = ""  # "in" / "out" / "turn": a slow push-in, pull-out or turn of the frame
 
     def __post_init__(self) -> None:
         if not 0.1 <= self.speed <= 4.0:

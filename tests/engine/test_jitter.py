@@ -42,3 +42,15 @@ def test_close_shaky_stretches_merge_and_short_ones_drop():
     spans = shaky_spans(v, FPS)
     assert len(spans) == 1 and spans[0][1] - spans[0][0] > 2 * S
     assert shaky_spans(np.zeros(0), FPS) == []
+
+
+def test_tripod_is_static_and_a_pan_is_not():
+    from toystudio.engine.analysis.jitter import _steps, is_static
+
+    def motion(offsets):
+        steps = _steps(_frames(offsets))
+        return np.concatenate([[0.0], np.hypot(*steps.T)])
+
+    assert is_static(motion([(0, 0)] * 30))
+    assert not is_static(motion([(k * 0.6, 0) for k in range(30)]))
+    assert not is_static(np.zeros(0))

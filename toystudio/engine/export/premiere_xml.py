@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -77,12 +77,12 @@ def sequence_xml(
     width: int,
     height: int,
     *,
-    dissolves: Sequence[int] = (),
+    transitions: Mapping[int, str] | None = None,
     fade: bool = False,
 ) -> str:
-    """`dissolves`: sequence positions (us) of V1 cuts to cross-dissolve; `fade`: from black at
-    the start and to black at the end. A dissolve without enough media on both sides is
-    left a cut."""
+    """`transitions`: V1 cuts (position in us -> "fade" / "white" / "whip"), all written as
+    Cross Dissolves of their length; `fade`: from black at the start and to black at the
+    end. A transition without enough media on both sides is left a cut."""
     fr = _Frames(fps)
     root = ET.Element("xmeml", version="4")
     seq = ET.SubElement(root, "sequence", id="sequence-1")
@@ -140,6 +140,8 @@ def sequence_xml(
             ci.append(_opacity(it.opacity))
         if kind == "video" and it.speed != 1.0:
             ci.append(_time_remap(it.speed))
+        if kind == "video" and it.move:
+            ci.append(_motion(it.move, src_in, src_out))
         if kind == "audio":
             src = ET.SubElement(ci, "sourcetrack")
             _text(src, "mediatype", "audio")
@@ -160,24 +162,24 @@ def sequence_xml(
 
     def main_track(track: ET.Element, clips: list[Item]) -> None:
         """V1 with its dissolves: clip, transition, clip ..."""
-        half = fr(DISSOLVE_US) // 2
         durations = {i: f.duration_us for i, f in files.items()}
-        joined = joins(clips, durations, dissolves, DISSOLVE_US // 2)
+        halves = [fr(h) for h in joins(clips, durations, transitions or {})]
+        edge = fr(DISSOLVE_US) // 2
         fade_in = fade and bool(clips) and clips[0].start == 0
         fade_out = fade and bool(clips)
         if fade_in:
-            transition(track, 0, 2 * half, "start-black")
+            transition(track, 0, 2 * edge, "start-black")
         for k, it in enumerate(clips):
-            before = half if k and joined[k - 1] else (0 if k == 0 and fade_in else None)
             last = k == len(clips) - 1
-            after = half if not last and joined[k] else (0 if last and fade_out else None)
+            before = halves[k - 1] if k and halves[k - 1] else (0 if k == 0 and fade_in else None)
+            after = halves[k] if not last and halves[k] else (0 if last and fade_out else None)
             clipitem(track, it, "video", before=before, after=after)
-            if not last and joined[k]:
+            if not last and halves[k]:
                 at = fr(clips[k + 1].start)
-                transition(track, at - half, at + half, "center")
+                transition(track, at - halves[k], at + halves[k], "center")
         if fade_out:
             end = fr(clips[-1].end)
-            transition(track, end - 2 * half, end, "end-black")
+            transition(track, end - 2 * edge, end, "end-black")
 
     main_track(ET.SubElement(video, "track"), sorted((i for i in items if i.track == "V1"),
                                                      key=lambda i: i.start))  # fmt: skip
@@ -198,6 +200,44 @@ def sequence_xml(
     ET.indent(root)
     body = ET.tostring(root, encoding="unicode")
     return '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n' + body + "\n"
+
+
+MOVE_ZOOM = 1.08  # a push-in / pull-out goes between 100 % and this
+MOVE_TURN_DEG = 1.5  # a turn goes from -this to +this, zoomed so no corner shows
+
+
+def move_keys(move: str) -> tuple[tuple[float, float], tuple[float, float]]:
+    """((scale at the start, at the end), (rotation at the start, at the end)) of a move."""
+    zoom = MOVE_ZOOM * 100
+    return {
+        "in": ((100.0, zoom), (0.0, 0.0)),
+        "out": ((zoom, 100.0), (0.0, 0.0)),
+        "turn": ((zoom, zoom), (-MOVE_TURN_DEG, MOVE_TURN_DEG)),
+    }.get(move, ((100.0, 100.0), (0.0, 0.0)))
+
+
+def _motion(move: str, first: int, last: int) -> ET.Element:
+    """Basic Motion with scale / rotation keyframes at the clip's in and out (source frames)."""
+    (s0, s1), (r0, r1) = move_keys(move)
+    flt = ET.Element("filter")
+    effect = ET.SubElement(flt, "effect")
+    for tag, value in (("name", "Basic Motion"), ("effectid", "basic"),
+                       ("effectcategory", "motion"), ("effecttype", "motion"),
+                       ("mediatype", "video")):  # fmt: skip
+        _text(effect, tag, value)
+    for pid, name, lo, hi, a, b in (("scale", "Scale", 0, 1000, s0, s1),
+                                    ("rotation", "Rotation", -8640, 8640, r0, r1)):  # fmt: skip
+        par = ET.SubElement(effect, "parameter")
+        _text(par, "parameterid", pid)
+        _text(par, "name", name)
+        _text(par, "valuemin", lo)
+        _text(par, "valuemax", hi)
+        _text(par, "value", f"{a:g}")
+        for when, at in ((first, a), (last, b)):
+            key = ET.SubElement(par, "keyframe")
+            _text(key, "when", when)
+            _text(key, "value", f"{at:g}")
+    return flt
 
 
 def _opacity(opacity: float) -> ET.Element:
@@ -224,12 +264,12 @@ def _time_remap(speed: float) -> ET.Element:
                        ("effectcategory", "motion"), ("effecttype", "motion"),
                        ("mediatype", "video")):  # fmt: skip
         _text(effect, tag, value)
-    for pid, value in (("variablespeed", 0), ("speed", f"{speed * 100:g}"),
-                       ("reverse", "FALSE"), ("frameblending", "FALSE")):  # fmt: skip
+    for pid, setting in (("variablespeed", 0), ("speed", f"{speed * 100:g}"),
+                         ("reverse", "FALSE"), ("frameblending", "FALSE")):  # fmt: skip
         par = ET.SubElement(effect, "parameter")
         _text(par, "parameterid", pid)
         _text(par, "name", pid)
-        _text(par, "value", value)
+        _text(par, "value", setting)
     return flt
 
 
@@ -265,11 +305,11 @@ def write_sequence(
     width: int,
     height: int,
     *,
-    dissolves: Sequence[int] = (),
+    transitions: Mapping[int, str] | None = None,
     fade: bool = False,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    text = sequence_xml(name, items, files, fps, width, height, dissolves=dissolves, fade=fade)
+    text = sequence_xml(name, items, files, fps, width, height, transitions=transitions, fade=fade)
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)

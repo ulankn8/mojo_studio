@@ -44,10 +44,12 @@ from toystudio.engine.edit.love import revised_plan
 from toystudio.engine.render.film import RenderStopped
 from toystudio.jobs.day_draft import (
     CLIP_MUSIC,
+    FIT_MOOD,
     RenderResult,
     add_ai_music,
     build_day_draft,
     clocks,
+    cut_sections,
     love_inputs,
     render_draft,
     review_inputs,
@@ -205,19 +207,26 @@ class _MusicTask(QObject, QRunnable):
 
     done = Signal(object, object, object)  # Path | None, AiMusic | None, error code | None
 
-    def __init__(self, root: Path, kind: str, mood: str) -> None:
+    def __init__(self, root: Path, kind: str, mood: str, skip_clocks: bool = False) -> None:
         QObject.__init__(self)
         QRunnable.__init__(self)
         self.setAutoDelete(False)
-        self.root, self.kind, self.mood = root, kind, mood
+        self.root, self.kind, self.mood, self.skip_clocks = root, kind, mood, skip_clocks
 
     def run(self) -> None:
         seconds, bpm = CLIP_MUSIC[self.kind]
         try:
-            music = compose(seconds, mood=self.mood, bpm=bpm)
+            if self.mood == FIT_MOOD:  # written to the clip as it is cut now
+                sections = cut_sections(self.root, self.kind, skip_clocks=self.skip_clocks)
+                style = "romantic" if self.kind == "sde" else "light"
+                music = compose(seconds, mood=style, bpm=bpm, sections=sections)
+            else:
+                music = compose(seconds, mood=self.mood, bpm=bpm)
             path = add_ai_music(self.root, music.audio, self.kind, self.mood)
         except ComposerError as e:
             self.done.emit(None, None, f"music_{e.code}")
+        except DraftError:
+            self.done.emit(None, None, "music_no_cut")
         except (OSError, sqlite3.Error, ValueError, RuntimeError):
             self.done.emit(None, None, "music_error")
         else:
@@ -373,7 +382,7 @@ class AnalysisVM(QObject):
         if self.music_busy or kind not in self.music_kinds:
             return
         self.music_busy, self.music_path, self.music, self.music_error = True, None, None, None
-        self._music_task = _MusicTask(self.root, kind, mood)
+        self._music_task = _MusicTask(self.root, kind, mood, self._skip_clocks)
         self._music_task.done.connect(self._on_music_done)
         QThreadPool.globalInstance().start(self._music_task)
         self.changed.emit()

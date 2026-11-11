@@ -14,10 +14,14 @@ corrected), in microseconds.
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from typing import Literal
 
+import numpy as np
+
+from toystudio.core.ai_plan import MusicMood, MusicSection
 from toystudio.core.models import AudioMode, Reason, Track
 from toystudio.core.timeline import MIN_SEGMENT_US, Segment, Timeline
 from toystudio.engine.audio.beats import CONFIDENT, Beats
@@ -74,6 +78,7 @@ class DayClip:
     music: tuple[Interval, ...] = ()
     bad: tuple[Interval, ...] = ()
     fps: float = 0.0
+    static: bool = False  # the camera stood still (measured): a push-in or a turn livens it
 
     @property
     def can_slow(self) -> bool:
@@ -95,6 +100,8 @@ class MusicTrack:
     duration: int
     beats: Beats
     made_for: str = ""  # "sde" / "express": written by the AI for that clip, and preferred
+    fitted: bool = False  # written to a finished cut: placed so its loudness follows the cut's
+    energy: tuple[float, ...] = ()  # loudness every ENERGY_STEP_US, 0..1
 
     @property
     def beat_us(self) -> int:
@@ -124,7 +131,8 @@ class Shot:
     reason: Reason
     section: int
     speed: float = 1.0  # SLOW: the source window is half the shot's length on screen
-    part: str = ""  # intro / development / climax / outro in clips
+    part: str = ""  # teaser / intro / development / climax / outro in clips
+    move: str = ""  # "in" / "out" / "turn": a slow push-in, pull-out or turn of a still frame
 
     @property
     def length(self) -> int:
@@ -141,6 +149,12 @@ class DayDraft:
     dissolves: tuple[int, ...] = ()  # timeline positions of cuts that cross-dissolve
     fade: bool = False  # from black at the start, to black at the end
     beat_us: int = 0  # the music's beat in a clip (overlays start on beats)
+    styles: tuple[tuple[int, str], ...] = ()  # cuts that are not plain: "white" / "whip"
+
+    @property
+    def transitions(self) -> dict[int, str]:
+        """Every cut that is not a hard one: position -> "fade" / "white" / "whip"."""
+        return {p: "fade" for p in self.dissolves} | dict(self.styles)
 
 
 # ---- helpers
@@ -473,6 +487,196 @@ def dissolves(shots: list[Shot] | tuple[Shot, ...]) -> tuple[int, ...]:
     return tuple(out)
 
 
+# ---- dynamics and the teaser (an editor's habits, REPORT.md rules 10, 23, 25)
+
+MOVES = ("in", "out", "in", "turn")  # pushes and pulls; a turn now and then
+MOVE_MIN_BEATS = 3
+DRONE_FAST = 1.5  # aerial fly-overs a little faster (the editor: x1.5-2, at most 2% of shots)
+DRONE_FAST_MAX = 2
+PACE_PASSAGES = 2  # calm runs that get a quick pair of shots
+TEASER_FLASHES = 7  # one beat each: the best moments, before the story starts
+_PACE = Reason("day_pace", "Быстрый проход", "Тез өтүү")
+_TEASER = Reason("day_teaser", "Тизер: лучшие моменты в начале", "Тизер: башында мыкты учурлар")
+
+
+def _elsewhere(c: DayClip, length: int, avoid: Shot) -> int | None:
+    """A clean window of `length` in the other half of the take from `avoid`'s."""
+    far = HEAD_US if avoid.src_in > c.duration / 2 else c.duration - length
+    start = _good_start(c, far, length)
+    if start is None or (start < avoid.src_out and avoid.src_in < start + length):
+        return None
+    return start
+
+
+def liven(
+    shots: list[Shot], by_id: dict[int, DayClip], beat: int, *, pace: bool = True
+) -> list[Shot]:
+    """Dynamics for a clip: still frames of 3+ beats get a slow push-in, pull-out or turn in
+    turn; the longest aerials of the middle fly 1.5x; and in two calm runs (3+ shots of 3+
+    beats) the middle shot becomes a quick pair from two moments of its take."""
+    out = list(shots)
+    aerials = sorted((k for k, s in enumerate(out) if s.part == "development"
+                      and by_id[s.media_id].aerial and s.speed == 1.0 and s.length >= 3 * beat),
+                     key=lambda k: -out[k].length)[:DRONE_FAST_MAX]  # fmt: skip
+    for k in aerials:
+        s, c = out[k], by_id[out[k].media_id]
+        src = round(s.length * DRONE_FAST)
+        start = _good_start(c, s.src_in, src)
+        if start is not None:
+            out[k] = replace(s, src_in=start, src_out=start + src, speed=DRONE_FAST)
+    calm = [k for k, s in enumerate(out) if s.part == "development" and s.speed == 1.0
+            and s.length >= 3 * beat]  # fmt: skip
+    runs = [k for k in calm if k - 1 in calm and k + 1 in calm]  # the middle of a calm run
+    picks = [runs[len(runs) // 4], runs[3 * len(runs) // 4]] if len(runs) >= 4 else runs[:1]
+    if not pace:  # the quick pairs are in the shots already (a frozen cut)
+        picks = []
+    for k in sorted(set(picks[:PACE_PASSAGES]), reverse=True):
+        s, c = out[k], by_id[out[k].media_id]
+        first = max(1, round(s.length / beat) // 2) * beat
+        second = s.length - first
+        start = _elsewhere(c, second, s)
+        if start is None or second < beat:
+            continue
+        a = replace(s, src_out=s.src_in + first)
+        b = replace(s, src_in=start, src_out=start + second, reason=replace(_PACE, ru=s.reason.ru))
+        out[k : k + 1] = [a, b]
+    still = [k for k, s in enumerate(out) if by_id[s.media_id].static
+             and s.part not in ("climax", "teaser") and s.length >= MOVE_MIN_BEATS * beat]  # fmt: skip
+    for n, k in enumerate(still[::2]):  # every other still frame: a move on each is a gimmick
+        out[k] = replace(out[k], move=MOVES[n % len(MOVES)])
+    return out
+
+
+def teaser(shots: list[Shot], by_id: dict[int, DayClip], beat: int) -> list[Shot]:
+    """One-beat flashes of the clip's best moments, from other moments of the same takes:
+    the emotional (slow) shots first, then the climax and the last aerial, then the rest
+    evenly; each take once, in the story's order."""
+    order = [k for k, s in enumerate(shots) if s.speed < 1.0]
+    order += [k for k, s in enumerate(shots) if s.part == "climax"][:1]
+    order += [k for k, s in enumerate(shots) if s.part == "outro"][-1:]
+    rest = [k for k in range(len(shots)) if k not in order]
+    order += rest[:: max(1, len(rest) // TEASER_FLASHES)]
+    chosen: list[int] = []
+    takes: set[int] = set()
+    for k in order:
+        s = shots[k]
+        if s.media_id in takes or len(chosen) >= TEASER_FLASHES:
+            continue
+        if _elsewhere(by_id[s.media_id], beat, s) is not None:
+            chosen.append(k)
+            takes.add(s.media_id)
+    flashes: list[Shot] = []
+    for k in sorted(chosen):
+        s = shots[k]
+        start = _elsewhere(by_id[s.media_id], beat, s)
+        assert start is not None
+        flashes.append(Shot(s.media_id, start, start + beat, False, _TEASER, s.section,
+                            part="teaser"))  # fmt: skip
+    return flashes
+
+
+def styles(shots: list[Shot] | tuple[Shot, ...]) -> tuple[tuple[int, str], ...]:
+    """A flash to white out of the teaser, and a whip into each quick pair's second shot."""
+    out: list[tuple[int, str]] = []
+    pos = 0
+    for prev, cur in pairwise(shots):
+        pos += prev.length
+        if prev.part == "teaser" and cur.part != "teaser":
+            out.append((pos, "white"))
+        elif cur.part == prev.part == "development" and cur.media_id == prev.media_id:
+            out.append((pos, "whip"))  # a quick pair: two moments of one take
+    return tuple(out)
+
+
+def finish(
+    shots: list[Shot],
+    by_id: dict[int, DayClip],
+    beat: int,
+    *,
+    with_teaser: bool = True,
+    pace: bool = True,
+) -> list[Shot]:
+    """A clip's shots with its dynamics and, in front, its teaser."""
+    lively = liven(shots, by_id, beat, pace=pace)
+    return (teaser(lively, by_id, beat) if with_teaser else []) + lively
+
+
+SECTION_MIN_US = 4 * S  # a shorter stretch joins the one before (the music cannot turn faster)
+
+
+def shot_moods(shots: Sequence[Shot], beat: int) -> list[MusicMood]:
+    """Each shot's atmosphere: its part (teaser, intro, climax, outro), or in the middle tender
+    (slow), lively (short, or one of a quick pair) or calm."""
+    out: list[MusicMood] = []
+    for k, s in enumerate(shots):
+        if s.part in ("teaser", "intro", "climax", "outro"):
+            out.append(s.part)  # type: ignore[arg-type]
+        elif s.speed < 1.0:
+            out.append("tender")
+        elif s.length <= 2 * beat or any(
+            0 <= j < len(shots) and j != k and shots[j].media_id == s.media_id
+            and shots[j].part == "development" for j in (k - 1, k + 1)
+        ):  # fmt: skip
+            out.append("pace")
+        else:
+            out.append("calm")
+    return out
+
+
+INTENSITY: dict[str, float] = {"teaser": 0.8, "intro": 0.25, "calm": 0.5, "tender": 0.4,
+                               "pace": 0.7, "climax": 1.0, "outro": 0.3}  # fmt: skip
+ENERGY_STEP_US = 500_000
+
+
+def _fit_start(track: MusicTrack, shots: Sequence[Shot], need: int) -> int:
+    """Where in a track written to the cut to start, so that its loudness follows the cut's
+    atmosphere best (its loudest part under the climax, its quiet ones under the intro and
+    the ending): the beat whose window correlates best with the cut's intensity."""
+    profile: list[float] = []
+    for s, mood in zip(shots, shot_moods(shots, track.beat_us), strict=True):
+        profile += [INTENSITY[mood]] * max(1, round(s.length / ENERGY_STEP_US))
+    p = np.asarray(profile) - float(np.mean(profile))
+    energy = np.asarray(track.energy)
+    best, best_score = track.first_beat, -2.0
+    for b in track.beats.beats_us:
+        if b + need > track.duration:
+            break
+        i = b // ENERGY_STEP_US
+        window = energy[i : i + len(p)]
+        if len(window) < len(p) or not np.std(window):
+            continue
+        w = window - float(np.mean(window))
+        score = float(np.dot(p, w) / (np.linalg.norm(p) * np.linalg.norm(w) + 1e-9))
+        if score > best_score:
+            best, best_score = b, score
+    return best
+
+
+def music_sections(draft: DayDraft) -> list[MusicSection]:
+    """The cut's atmosphere stretch by stretch, for music written to it: the teaser, the
+    intro, calm and tender (slow) passages, lively ones (short shots, quick pairs), the
+    climax and the outro."""
+    out: list[MusicSection] = []
+    pos = 0
+    for s, mood in zip(draft.shots, shot_moods(draft.shots, draft.beat_us or FALLBACK_BEAT_US),
+                       strict=True):  # fmt: skip
+        end = pos + s.length
+        if out and out[-1].mood == mood:
+            out[-1] = replace(out[-1], end_us=end)
+        else:
+            out.append(MusicSection(pos, end, mood))
+        pos = end
+    merged: list[MusicSection] = []
+    for sec in out:  # short stretches of the middle join the one before
+        middle = ("calm", "tender", "pace")
+        short = sec.end_us - sec.start_us < SECTION_MIN_US and sec.mood in middle
+        if merged and (merged[-1].mood == sec.mood or (short and merged[-1].mood in middle)):
+            merged[-1] = replace(merged[-1], end_us=sec.end_us)
+        else:
+            merged.append(sec)
+    return merged
+
+
 # ---- assembly
 
 
@@ -501,7 +705,14 @@ def _music_under(shots: list[Shot], tracks: dict[int, MusicTrack | None]) -> lis
         track, need = tracks.get(sec), by_section[sec]
         first = True
         start = track.first_beat if track else 0
-        if track is not None and track.made_for and track.duration - start >= need:
+        if track is not None and track.fitted and track.energy:
+            start = _fit_start(track, [s for s in shots if s.section == sec], need)
+        elif (
+            track is not None
+            and track.made_for
+            and not track.fitted
+            and track.duration - start >= need
+        ):
             # music written for the clip ends on its own last chord: end the clip with it
             beat = track.beat_us
             start += (track.duration - start - need) // beat * beat
@@ -531,6 +742,7 @@ def _timeline(shots: list[Shot], music: list[Segment], by_id: dict[int, DayClip]
             audio_mode=AudioMode.ORIGINAL if s.live else AudioMode.MUSIC,
             reasons=(s.reason,),
             speed=s.speed,
+            move=s.move,
         )
         for i, s in enumerate(shots)
     )
@@ -602,11 +814,13 @@ def build_clip(clips: list[DayClip], tracks: list[MusicTrack], kind: ClipKind) -
         track = fast[0] if fast else None
     if not source:
         return DayDraft(Timeline(), (), tuple(s.kind for s in secs), DraftStats(0, 0, 0, 0))
-    shots = _clip_shots(source, target, track, kind, 0)
-    music = _music_under(shots, {0: track})
     beat = track.beat_us if track else FALLBACK_BEAT_US
+    shots = finish(_clip_shots(source, target - TEASER_FLASHES * beat, track, kind, 0), by_id,
+                   beat)  # fmt: skip
+    music = _music_under(shots, {0: track})
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), tuple(s.kind for s in secs),
-                    _stats(shots, source, 1), dissolves(shots), True, beat)  # fmt: skip
+                    _stats(shots, source, 1), dissolves(shots), True, beat,
+                    styles(shots))  # fmt: skip
 
 
 def day_layout(draft: DayDraft) -> list[Item]:
@@ -616,7 +830,8 @@ def day_layout(draft: DayDraft) -> list[Item]:
     music_spans: list[Interval] = []
     for seg in draft.timeline.video:
         end = pos + seg.duration
-        items.append(Item("V1", int(seg.media_id), seg.src_in, seg.src_out, pos, end, seg.speed))
+        items.append(Item("V1", int(seg.media_id), seg.src_in, seg.src_out, pos, end, seg.speed,
+                          move=seg.move))  # fmt: skip
         if seg.audio_mode is AudioMode.ORIGINAL:
             items.append(Item("A", int(seg.media_id), seg.src_in, seg.src_out, pos,
                               pos + seg.duration))  # fmt: skip

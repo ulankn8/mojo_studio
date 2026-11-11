@@ -35,6 +35,7 @@ from toystudio.app.widgets.icons import icon
 from toystudio.app.widgets.moment_card import PREVIEW_H, PREVIEW_W, MomentCard
 from toystudio.core.format import format_timecode
 from toystudio.core.models import ProjectFormat
+from toystudio.jobs.day_draft import FIT_MOOD
 
 FEED_COALESCE_MS = 200
 _DRAFT_LABELS = {
@@ -98,12 +99,16 @@ _DRAFT_ERRORS = {
         "AnalysisScreen", "Google не принял запрос музыки — попробуйте ещё раз позже."
     ),
     "music_error": QT_TRANSLATE_NOOP("AnalysisScreen", "Не удалось сохранить музыку в проект."),
+    "music_no_cut": QT_TRANSLATE_NOOP(
+        "AnalysisScreen", "Сначала соберите клип — музыка пишется под его атмосферу."
+    ),
 }
 _MUSIC_KINDS = {
     "sde": QT_TRANSLATE_NOOP("AnalysisScreen", "Love Story"),
     "express": QT_TRANSLATE_NOOP("AnalysisScreen", "Экспресс-видео"),
 }
 _MOODS = {
+    FIT_MOOD: QT_TRANSLATE_NOOP("AnalysisScreen", "по атмосфере клипа"),
     "romantic": QT_TRANSLATE_NOOP("AnalysisScreen", "романтичное кино"),
     "light": QT_TRANSLATE_NOOP("AnalysisScreen", "лёгкое и светлое"),
     "epic": QT_TRANSLATE_NOOP("AnalysisScreen", "эпичное"),
