@@ -20,8 +20,21 @@ const useEnvelope = (inShare = 0.2, outShare = 0.35) => {
   });
 };
 
-const Black: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <AbsoluteFill style={{ backgroundColor: "black", overflow: "hidden" }}>{children}</AbsoluteFill>
+// Faces live in the middle of a wedding frame: overlays that keep it clear fade out there.
+const CENTER_CLEAR =
+  "radial-gradient(ellipse 34% 40% at 50% 42%, transparent 0%, transparent 60%, black 100%)";
+
+const Black: React.FC<{ children: React.ReactNode; clearCenter?: boolean }> = ({
+  children,
+  clearCenter = false,
+}) => (
+  <AbsoluteFill style={{ backgroundColor: "black", overflow: "hidden" }}>
+    <AbsoluteFill
+      style={clearCenter ? { maskImage: CENTER_CLEAR, WebkitMaskImage: CENTER_CLEAR } : {}}
+    >
+      {children}
+    </AbsoluteFill>
+  </AbsoluteFill>
 );
 
 /** A warm light leak drifting across the frame. */
@@ -64,7 +77,7 @@ export const Lines: React.FC = () => {
   const env = useEnvelope(0.1, 0.45);
   const lines = [0, 1, 2, 3, 4];
   return (
-    <Black>
+    <Black clearCenter>
       <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
         <defs>
           <linearGradient id="ln" x1="0" x2="1" y1="0" y2="0">
@@ -82,8 +95,9 @@ export const Lines: React.FC = () => {
           </filter>
         </defs>
         {lines.map((i) => {
-          const y0 = height * (0.2 + 0.15 * i);
-          const amp = height * (0.12 + 0.08 * random(`a${i}`));
+          // along the top and bottom edges of the frame, never across the faces
+          const y0 = height * [0.07, 0.15, 0.8, 0.87, 0.94][i];
+          const amp = height * (0.025 + 0.02 * random(`a${i}`));
           const delay = i * 4;
           const p = interpolate(frame - delay, [0, durationInFrames * 0.55], [0, 1], {
             extrapolateLeft: "clamp",
@@ -173,7 +187,7 @@ export const Bokeh: React.FC = () => {
   const n = 26;
   const colors = [GOLD, PEACH, ROSE, GOLD];
   return (
-    <Black>
+    <Black clearCenter>
       {new Array(n).fill(0).map((_, i) => {
         const size = 40 + 140 * random(`s${i}`);
         const x = random(`x${i}`) * width;

@@ -2,6 +2,8 @@
 
 from itertools import pairwise
 
+import pytest
+
 from toystudio.core.models import Reason
 from toystudio.core.timeline import Timeline
 from toystudio.engine.edit.day import DayDraft, Shot
@@ -60,3 +62,21 @@ def test_film_and_empty_drafts_get_none():
 def test_assets_exist_for_every_overlay():
     for name, (mid, _) in OVERLAYS.items():
         assert asset(mid) == ASSET_DIR / f"{name}.mp4" and asset(mid).is_file()
+
+
+@pytest.mark.parametrize("name", ["lines", "bokeh"])
+def test_lines_and_bokeh_keep_the_faces_clear(name):
+    """The middle of the frame (where faces are) stays dark in the overlays laid over people."""
+    import shutil
+    import subprocess
+
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("needs ffmpeg")
+    media_id, length = OVERLAYS[name]
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", f"{length / 2 / S:.2f}", "-i", str(asset(media_id)),
+         "-frames:v", "1", "-vf", "crop=iw*0.3:ih*0.3:iw*0.35:ih*0.27,format=gray",
+         "-f", "rawvideo", "-"],
+        capture_output=True, check=True,
+    ).stdout  # fmt: skip
+    assert sum(raw) / len(raw) < 6  # near black: nothing crosses the faces
