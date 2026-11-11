@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import anthropic
 from pydantic import BaseModel, Field
 
-from toystudio.core.ai_plan import AiClip, AiPlan, AiShot
+from toystudio.core.ai_plan import AiClip, AiPlan, AiReview, AiShot, ReviewChange, ReviewShot
 
 MODEL = "claude-opus-5-5"
 MAX_FRAMES = 300  # per request; the API takes up to 600, more only adds cost
@@ -122,26 +122,23 @@ def _client() -> anthropic.Anthropic:
     return client
 
 
-def plan_love_story(
-    clips: Sequence[AiClip], *, tempo: float, beat_us: int, target_us: int
-) -> AiPlan:
-    """Ask Claude for the edit plan; raises DirectorError with a code the GUI can explain."""
-    if not clips:
-        raise DirectorError("empty")
-    content = build_content(clips, tempo=tempo, beat_us=beat_us, target_us=target_us)
+def _ask[T: BaseModel](
+    system: str, content: list[dict[str, object]], output_format: type[T]
+) -> tuple[T, Any]:
+    """One structured request to Claude; API errors become DirectorError codes."""
     client = _client()
     try:
         response = client.beta.messages.parse(
             model=MODEL,
             max_tokens=16000,
-            system=SYSTEM,
+            system=system,
             thinking={"type": "adaptive"},
             output_config={"effort": "high"},
             # on a policy decline the API reruns the request on a fallback model by itself
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
-            messages=[{"role": "user", "content": content}],  # type: ignore[typeddict-item]
-            output_format=_Plan,
+            messages=[{"role": "user", "content": content}],  # type: ignore[misc,list-item]
+            output_format=output_format,
         )
     except anthropic.AuthenticationError as e:
         raise DirectorError("bad_key", e.message) from None
@@ -158,6 +155,17 @@ def plan_love_story(
     parsed = response.parsed_output
     if parsed is None:
         raise DirectorError("empty", f"stop_reason={response.stop_reason}")
+    return parsed, response
+
+
+def plan_love_story(
+    clips: Sequence[AiClip], *, tempo: float, beat_us: int, target_us: int
+) -> AiPlan:
+    """Ask Claude for the edit plan; raises DirectorError with a code the GUI can explain."""
+    if not clips:
+        raise DirectorError("empty")
+    content = build_content(clips, tempo=tempo, beat_us=beat_us, target_us=target_us)
+    parsed, response = _ask(SYSTEM, content, _Plan)
     shots = tuple(AiShot(s.clip, s.start_pct, s.beats, s.part, s.why, s.slow) for s in parsed.shots)
     chosen, _ = _picked(clips)
     return AiPlan(
@@ -168,3 +176,59 @@ def plan_love_story(
         output_tokens=response.usage.output_tokens,
         clips_sent=len(chosen),
     )
+
+
+# --- the check of a finished cut
+
+REVIEW_SYSTEM = """You check a finished wedding love-story clip before it is shown to the \
+couple. For every shot you see its frame A as cut, and when there is one, B (another moment \
+of the same take) and C (a take the clip does not use), all of the same length.
+
+Replace A only when it is clearly weak: squinting or closed eyes, an awkward, stiff or \
+unfinished pose, people still getting into position, a face hidden, cut off or turned away \
+at the wrong moment, motion blur, an accidental look into the camera, an unflattering \
+expression or mouth. Pick the better of B and C if one is clearly good, or "drop" when \
+neither is. Leave good shots alone - most shots should stay. Keep the story: C must fit \
+where the shot stands (part and description).
+
+Write every `problem` in Russian, short and concrete (what is wrong in A)."""
+
+
+class _Change(BaseModel):
+    shot: int = Field(description="Number of the shot as captioned")
+    pick: Literal["B", "C", "drop"]
+    problem: str
+
+
+class _Review(BaseModel):
+    changes: list[_Change]
+
+
+def review_content(shots: Sequence[ReviewShot]) -> list[dict[str, object]]:
+    content: list[dict[str, object]] = [
+        {"type": "text", "text": f"Планов в клипе: {len(shots)}. Варианты одинаковой длины."}
+    ]
+    for s in shots:
+        if not s.options[0].frame.is_file():  # nothing to look at: the shot stays as it is
+            continue
+        content.append({"type": "text", "text": f"План {s.index} · {s.part} · {s.why}"})
+        for o in s.options:
+            if not o.frame.is_file():
+                continue
+            content.append({"type": "text", "text": o.label})
+            data = base64.standard_b64encode(o.frame.read_bytes()).decode("ascii")
+            content.append({"type": "image", "source": {"type": "base64",
+                            "media_type": "image/jpeg", "data": data}})  # fmt: skip
+    return content
+
+
+def review_cut(shots: Sequence[ReviewShot]) -> AiReview:
+    """Ask Claude which shots of the cut to swap; raises DirectorError like plan_love_story."""
+    if not shots:
+        raise DirectorError("empty")
+    parsed, response = _ask(REVIEW_SYSTEM, review_content(shots), _Review)
+    at = {s.index: s.at_us for s in shots}
+    changes = tuple(ReviewChange(c.shot, c.pick, c.problem, at[c.shot]) for c in parsed.changes
+                    if c.shot in at)  # fmt: skip
+    return AiReview(changes, response.model, response.usage.input_tokens,
+                    response.usage.output_tokens)  # fmt: skip

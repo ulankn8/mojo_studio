@@ -10,8 +10,9 @@ motion is kept only for footage that has the frames for it, and the total is fit
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 
-from toystudio.core.ai_plan import AiPlan, AiShot
+from toystudio.core.ai_plan import AiPlan, AiReview, AiShot, ReviewOption, ReviewShot
 from toystudio.core.models import Reason
 from toystudio.core.timeline import MIN_SEGMENT_US
 from toystudio.engine.edit.day import (
@@ -140,3 +141,24 @@ def build_from_plan(
     source = [by_id[i] for i in {s.media_id for s in shots}]
     return DayDraft(_timeline(shots, music, by_id), tuple(shots), ("love",),
                     _stats(shots, source, 1), dissolves(shots), True, beat)  # fmt: skip
+
+
+def revised_plan(plan: AiPlan, shots: list[ReviewShot], review: AiReview) -> AiPlan:
+    """The cut as it was built, frozen into a plan (each shot's real window and length), with
+    the AI's picks swapped in: B / C take that option's window, "drop" leaves the shot out. A
+    pick the shot has no option for, or a C clip another shot already took, keeps the shot."""
+    picks = {c.shot: c.pick for c in review.changes}
+    taken: set[int] = set()
+    out: list[AiShot] = []
+    for s in shots:
+        pick = picks.get(s.index, "A")
+        if pick == "drop":
+            continue
+        options: dict[str, ReviewOption] = {o.label: o for o in s.options}
+        o = options.get(pick, options["A"])
+        if o.label == "C" and o.clip_id in taken:
+            o = options["A"]
+        if o.label == "C":
+            taken.add(o.clip_id)
+        out.append(AiShot(o.clip_id, o.start_pct, s.beats, s.part, s.why, o.speed != 1.0))
+    return replace(plan, shots=tuple(out))

@@ -19,7 +19,16 @@ from typing import Literal
 
 import numpy as np
 
-from toystudio.core.ai_plan import AiClip, AiPlan, AiShot
+from toystudio.core.ai_plan import (
+    AiClip,
+    AiPlan,
+    AiReview,
+    AiShot,
+    OptionLabel,
+    ReviewOption,
+    ReviewShot,
+    as_part,
+)
 from toystudio.core.clock import camera_spans, reference_camera, shot_time, suspicious
 from toystudio.core.models import US_PER_S, AudioLabel, MediaInfo, MediaRole, MediaRow, MediaStatus
 from toystudio.engine.analysis import single_pass
@@ -30,10 +39,12 @@ from toystudio.engine.color.grade import LOOK_NAME, balance, chroma, film_chroma
 from toystudio.engine.edit.day import (
     CLIP_FPS,
     FALLBACK_BEAT_US,
+    HEAD_US,
     SDE_US,
     DayClip,
     DayDraft,
     MusicTrack,
+    _good_start,
     build_clip,
     build_film,
     day_layout,
@@ -60,8 +71,10 @@ _TITLES: dict[str, tuple[str, str]] = {  # kind -> (cut title, file suffix)
     "sde_ai": ("Love Story · ИИ", "love story ИИ"),
 }
 AI_FRAME_WIDTH = 320  # 320x180: 84 tokens a frame
+REVIEW_FRAME_WIDTH = 640  # 640x360 (299 tokens): a squint in a medium shot is a few pixels at 320
 AI_FRAME_AT = (0.1, 0.5, 0.9)  # beginning, middle and end: where the best moment is
 PLAN_FILE = "love_plan.json"
+REVIEW_FILE = "love_review.json"
 AI_MUSIC = "T-Studio ИИ"  # file names of the AI's music: "T-Studio ИИ · sde · romantic · <time>"
 AUDIBLE = 0.05  # of the loudest moment (about -26 dB): where a track's music begins
 # the clip each AI piece is written for: (length, tempo); 3 s more than the clip, as a
@@ -318,6 +331,7 @@ class _Built:
     draft: DayDraft
     titles: tuple[str, str]
     media: list[MediaRow]
+    clips: list[DayClip]  # with their shaky stretches among the bad frames
 
 
 def _built(store: ProjectStore, kind: DayKind, skip_clocks: bool, ai_plan: AiPlan | None) -> _Built:
@@ -341,7 +355,86 @@ def _built(store: ProjectStore, kind: DayKind, skip_clocks: bool, ai_plan: AiPla
             draft = build_clip(clips, tracks, kind)
     if not draft.shots:
         raise DraftError("nothing_to_keep")
-    return _Built(draft, titles, media)
+    return _Built(draft, titles, media, clips)
+
+
+def review_inputs(root: Path, *, skip_clocks: bool = False) -> list[ReviewShot]:
+    """Every shot of the AI love story as cut, with alternatives for the AI's check: A the shot
+    itself, B another clean moment of the same take, C the same length from the nearest take
+    of the love story the cut does not use; one frame from the middle of each window."""
+    plan = saved_plan(root)
+    if plan is None:
+        raise DraftError("no_plan")
+    store = ProjectStore.open(root)
+    try:
+        b = _built(store, "sde", skip_clocks, plan)
+        by_id = {c.media_id: c for c in b.clips}
+        cache = store.root / "cache"
+        unused = [
+            c for c in love_source(b.clips) if c.media_id not in {s.media_id for s in b.draft.shots}
+        ]
+        offered: set[int] = set()
+        beat = b.draft.beat_us or FALLBACK_BEAT_US
+        out: list[ReviewShot] = []
+        at = 0
+        for n, s in enumerate(b.draft.shots, 1):
+            c = by_id[s.media_id]
+            a = _option(cache, "A", c, s.src_in, s.src_out - s.src_in, s.speed)
+            seen = a.frame.is_file()  # without a frame of its own the shot is kept, not shown
+            options = [a]
+            src = s.src_out - s.src_in
+            far = HEAD_US if s.src_in > c.duration / 2 else c.duration - src  # the other half
+            other = _good_start(c, far, src)
+            b_opt = (
+                _option(cache, "B", c, other, src, s.speed)
+                if other is not None and abs(other - s.src_in) >= src
+                else None
+            )
+            if seen and b_opt and b_opt.frame.is_file():
+                options.append(b_opt)
+            # the nearest unused take not offered to the shot before (a take goes in once:
+            # revised_plan keeps a second pick of it as it was)
+            near = sorted((u for u in unused if u.media_id not in offered),
+                          key=lambda u: abs(u.time - c.time))  # fmt: skip
+            offered = set()
+            for u in near:
+                speed = s.speed if u.can_slow else 1.0
+                window = round(s.length * speed)
+                start = _good_start(u, (u.duration - window) // 2, window)
+                c_opt = _option(cache, "C", u, start, window, speed) if start is not None else None
+                if seen and c_opt and c_opt.frame.is_file():
+                    options.append(c_opt)
+                    offered = {u.media_id}
+                    break
+            beats = max(1, round(s.length / beat))
+            out.append(ReviewShot(n, at, beats, as_part(s.part), s.reason.ru, tuple(options)))
+            at += s.length
+        return out
+    finally:
+        store.close()
+
+
+def _option(
+    cache: Path, label: OptionLabel, c: DayClip, src_in: int, src: int, speed: float
+) -> ReviewOption:
+    """A window and the frame from its middle (cached by clip and moment; the frame is
+    missing when the clip has no proxy)."""
+    mid = src_in + src // 2
+    frame = cache / "thumbs" / f"rv{c.media_id}_{mid // 1000}_{REVIEW_FRAME_WIDTH}.jpg"
+    proxy = outputs_for(cache, c.media_id).proxy
+    if not frame.is_file() and proxy.is_file():
+        with contextlib.suppress(RuntimeError, ValueError, OSError):
+            frame_at(proxy, mid, frame, REVIEW_FRAME_WIDTH)
+    pct = 100.0 * src_in / c.duration if c.duration else 0.0
+    return ReviewOption(label, c.media_id, pct, speed, frame)
+
+
+def save_review(root: Path, review: AiReview) -> None:
+    """The AI's check of the cut, kept next to its plan (what was swapped and why)."""
+    folder = root / "cache" / "ai"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / REVIEW_FILE).write_text(json.dumps(asdict(review), ensure_ascii=False, indent=1,
+                                                 default=str), encoding="utf-8")  # fmt: skip
 
 
 def _overlay_refs(export_dir: Path, items: list[Item]) -> dict[int, FileRef]:

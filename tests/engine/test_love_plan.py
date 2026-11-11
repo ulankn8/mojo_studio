@@ -170,3 +170,33 @@ def test_take_heads_and_tails_are_trimmed():
     short = build_from_plan(_plan(shot(3, 2, pct=0.0)), _clips(seconds=1.5), _track(), 88 * S)
     s = short.shots[0]  # a 1.5 s take: no room to trim both, the window sits inside it
     assert 0 < s.src_in and s.src_out < 1.5 * S
+
+
+# --- the AI's check of the cut
+
+
+def _rshot(i, clip, *labels):
+    from pathlib import Path
+
+    from toystudio.core.ai_plan import ReviewOption, ReviewShot
+
+    opts = [ReviewOption("A", clip, 30.0, 1.0, Path("a.jpg"))]
+    for label in labels:
+        other = clip + 100 if label == "C" else clip
+        opts.append(ReviewOption(label, other, 60.0, 0.5 if label == "C" else 1.0, Path("x.jpg")))
+    return ReviewShot(i, 0, 3, "development", f"план {i}", tuple(opts))
+
+
+def test_revised_plan_swaps_drops_and_keeps():
+    from toystudio.core.ai_plan import AiReview, ReviewChange
+    from toystudio.engine.edit.love import revised_plan
+
+    shots = [_rshot(1, 1, "B", "C"), _rshot(2, 2, "B", "C"), _rshot(3, 3, "B"), _rshot(4, 4)]
+    review = AiReview((ReviewChange(1, "B", "щурится"), ReviewChange(2, "C", "смаз"),
+                       ReviewChange(3, "drop", "спиной"), ReviewChange(4, "C", "нет варианта")))  # fmt: skip
+    plan = revised_plan(_plan(), shots, review)
+    got = [(s.clip_id, s.start_pct, s.slow) for s in plan.shots]
+    assert got == [(1, 60.0, False), (102, 60.0, True), (4, 30.0, False)]
+    assert plan.story == _plan().story
+    unchanged = revised_plan(_plan(), shots, AiReview(()))
+    assert [s.clip_id for s in unchanged.shots] == [1, 2, 3, 4]

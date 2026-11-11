@@ -143,3 +143,56 @@ def test_no_key_and_no_clips(tmp_path, monkeypatch):
     with pytest.raises(DirectorError) as e:
         plan_love_story([], tempo=98.0, beat_us=612_000, target_us=88 * S)
     assert e.value.code == "empty"
+
+
+# --- the check of a finished cut
+
+
+def _review_shots(tmp_path):
+    from toystudio.core.ai_plan import ReviewOption, ReviewShot
+
+    shots = []
+    for i in (1, 2):
+        opts = []
+        for label in ("A", "B", "C"):
+            f = tmp_path / f"rv{i}{label}.jpg"
+            f.write_bytes(JPEG)
+            opts.append(ReviewOption(label, 10 * i, 30.0, 1.0, f))
+        shots.append(ReviewShot(i, (i - 1) * 2 * S, 3, "development", "объятие", tuple(opts)))
+    return shots
+
+
+def test_review_request_shows_each_shot_with_its_options(tmp_path):
+    content = director.review_content(_review_shots(tmp_path))
+    texts = [b["text"] for b in content if b["type"] == "text"]
+    assert texts[1] == "План 1 · development · объятие" and texts[2:5] == ["A", "B", "C"]
+    assert sum(b["type"] == "image" for b in content) == 6
+
+
+def test_review_answer_becomes_changes_at_their_times(tmp_path, monkeypatch):
+    review = director._Review(
+        changes=[
+            director._Change(shot=2, pick="C", problem="жених щурится"),
+            director._Change(shot=9, pick="drop", problem="нет такого плана"),
+        ]
+    )
+    usage = SimpleNamespace(input_tokens=12000, output_tokens=1500)
+    answer = SimpleNamespace(stop_reason="end_turn", parsed_output=review,
+                             model="claude-opus-5-5", usage=usage)  # fmt: skip
+    fake = FakeClient(answer=answer)
+    monkeypatch.setattr(director, "_client", lambda: fake)
+    r = director.review_cut(_review_shots(tmp_path))
+    (call,) = fake.calls
+    assert call["system"] == director.REVIEW_SYSTEM and call["output_format"] is director._Review
+    assert [(c.shot, c.pick, c.at_us) for c in r.changes] == [(2, "C", 2 * S)]  # 9 is unknown
+    assert abs(r.cost_usd - (12000 * 4 + 1500 * 20) / 1e6) < 1e-9
+
+
+def test_review_errors_and_empty_cut(tmp_path, monkeypatch):
+    monkeypatch.setattr(director, "_client", lambda: FakeClient(answer=_answer("refusal")))
+    with pytest.raises(DirectorError) as e:
+        director.review_cut(_review_shots(tmp_path))
+    assert e.value.code == "refusal"
+    with pytest.raises(DirectorError) as e:
+        director.review_cut([])
+    assert e.value.code == "empty"

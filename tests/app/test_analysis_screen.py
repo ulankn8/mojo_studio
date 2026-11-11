@@ -953,6 +953,12 @@ def _ai_screen(qtbot, project, jobs, app_store, monkeypatch, plan_result):
     )
     monkeypatch.setattr(avm, "plan_love_story", plan_result)
     monkeypatch.setattr(vm, "needs_clocks", lambda: False)
+    # the check of the cut: by default it finds nothing to swap
+    from toystudio.core.ai_plan import AiReview
+
+    monkeypatch.setattr(avm, "review_inputs", lambda _root, **_k: [])
+    monkeypatch.setattr(avm, "review_cut", lambda _shots: AiReview((), "m", 1000, 100))
+    monkeypatch.setattr(avm, "save_review", lambda _root, _review: None)
     return vm, screen
 
 
@@ -973,8 +979,9 @@ def test_ai_love_story_runs_in_background_and_shows_the_story(
     assert vm.ai_busy and screen.draft_label.text().startswith("ИИ смотрит кадры")
     assert not screen.draft_buttons["sde"].isEnabled()
     qtbot.waitUntil(lambda: not vm.ai_busy, timeout=5000)
-    first, look = screen.draft_label.text().split("\n")
-    assert first == "Love Story: 01:28, склеек 47 · ИИ: «Сборы, встреча, крыша» · ≈ $0.22"
+    first, checked, look = screen.draft_label.text().split("\n")
+    assert first == "Love Story: 01:28, склеек 47 · ИИ: «Сборы, встреча, крыша» · ≈ $0.23"
+    assert checked == "ИИ проверил кадры: заменять нечего."
     assert "Тёплое кино.cube" in look and "Lumetri" in look
     assert screen.draft_buttons["sde"].isEnabled() and not screen.open_folder_button.isHidden()
     assert not screen.render_button.isHidden() and screen.render_button.text() == "Сохранить видео"
@@ -1101,3 +1108,51 @@ def test_ai_music_menu_writes_music_in_the_background(
     actions[0].trigger()
     qtbot.waitUntil(lambda: not vm.music_busy, timeout=5000)
     assert "setx GEMINI_API_KEY" in screen.draft_label.text()
+
+
+def test_ai_check_swaps_weak_shots_and_survives_its_own_failure(
+    qtbot, project, jobs, app_store, monkeypatch, tmp_path
+):
+    from toystudio.app.viewmodels import analysis_vm as avm
+    from toystudio.cloud.director import DirectorError
+    from toystudio.core.ai_plan import AiPlan, AiReview, AiShot, ReviewChange
+    from toystudio.engine.edit.restaurant import DraftStats
+    from toystudio.jobs.restaurant_draft import DraftResult
+
+    plan = AiPlan("История", (AiShot(1, 30.0, 3, "development", "x"),), "m", 1000, 100, 1)
+    vm, screen = _ai_screen(qtbot, project, jobs, app_store, monkeypatch, lambda *a, **k: plan)
+    stats = DraftStats(duration_us=88_000_000, cuts=40, dropped_us=0, blocks=1)
+    builds = []
+
+    def fake_build(_root, kind, *, ai_plan=None, **_k):
+        builds.append(ai_plan)
+        return DraftResult(tmp_path / "x.xml", "cut", stats)
+
+    revised = AiPlan("История", (), "m", 1000, 100, 1)
+    review = AiReview(
+        (
+            ReviewChange(7, "C", "жених щурится", 50_000_000),
+            ReviewChange(9, "drop", "смаз", 61_000_000),
+        ),
+        "m",
+        10_000,
+        2_000,
+    )
+    monkeypatch.setattr(avm, "build_day_draft", fake_build)
+    monkeypatch.setattr(avm, "review_cut", lambda _shots: review)
+    monkeypatch.setattr(avm, "revised_plan", lambda _p, _s, _r: revised)
+    screen.draft_buttons["sde_ai"].click()
+    qtbot.waitUntil(lambda: not vm.ai_busy, timeout=5000)
+    assert builds == [plan, revised]  # built, checked, rebuilt with the swaps
+    text = screen.draft_label.text()
+    assert "заменено 2: 00:50 — жених щурится; 01:01 — смаз" in text
+
+    def broken(_shots):
+        raise DirectorError("network")
+
+    builds.clear()
+    monkeypatch.setattr(avm, "review_cut", broken)
+    screen.draft_buttons["sde_ai"].click()
+    qtbot.waitUntil(lambda: not vm.ai_busy, timeout=5000)
+    assert builds == [plan] and vm.draft is not None  # the draft stands without the check
+    assert "Проверка кадров ИИ не удалась" in screen.draft_label.text()

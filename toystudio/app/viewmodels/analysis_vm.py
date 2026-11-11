@@ -20,8 +20,8 @@ from PySide6.QtCore import (
 
 from toystudio.app.i18n import current_language
 from toystudio.cloud.composer import AiMusic, ComposerError, compose
-from toystudio.cloud.director import DirectorError, plan_love_story
-from toystudio.core.ai_plan import AiPlan
+from toystudio.cloud.director import DirectorError, plan_love_story, review_cut
+from toystudio.core.ai_plan import AiPlan, AiReview
 from toystudio.core.eta import DEFAULT_X_RT, SPEECH_X_RT
 from toystudio.core.format import format_eta
 from toystudio.core.models import (
@@ -40,6 +40,7 @@ from toystudio.core.models import (
     StageState,
 )
 from toystudio.engine.analysis.quality import overall_label
+from toystudio.engine.edit.love import revised_plan
 from toystudio.engine.render.film import RenderStopped
 from toystudio.jobs.day_draft import (
     CLIP_MUSIC,
@@ -49,6 +50,8 @@ from toystudio.jobs.day_draft import (
     clocks,
     love_inputs,
     render_draft,
+    review_inputs,
+    save_review,
 )
 from toystudio.jobs.launch import stop_file_for, worker_argv
 from toystudio.jobs.manager import JobManager
@@ -127,7 +130,8 @@ DRAFT_KINDS: dict[ProjectFormat, tuple[DraftKind, ...]] = {
 class _AiTask(QObject, QRunnable):
     """The AI love story off the GUI thread: frames, the request to Claude, the draft."""
 
-    done = Signal(object, object, object)  # DraftResult | None, AiPlan | None, error | None
+    # DraftResult | None, AiPlan | None, error | None, AiReview | review error code | None
+    done = Signal(object, object, object, object)
 
     def __init__(self, root: Path, skip_clocks: bool, effects: bool = True) -> None:
         QObject.__init__(self)
@@ -143,13 +147,25 @@ class _AiTask(QObject, QRunnable):
             )
             result = build_day_draft(self.root, "sde", ai_plan=plan, effects=self.effects)
         except DraftError as e:
-            self.done.emit(None, None, e.code)
+            self.done.emit(None, None, e.code, None)
+            return
         except DirectorError as e:
-            self.done.emit(None, None, f"ai_{e.code}")
+            self.done.emit(None, None, f"ai_{e.code}", None)
+            return
         except (OSError, sqlite3.Error, ValueError):
-            self.done.emit(None, None, "error")
-        else:
-            self.done.emit(result, plan, None)
+            self.done.emit(None, None, "error", None)
+            return
+        review: AiReview | str = "review_error"
+        try:  # the AI looks at the cut and swaps the weak shots; the draft stands without it
+            shots = review_inputs(self.root, skip_clocks=self.skip_clocks)
+            review = review_cut(shots)
+            save_review(self.root, review)
+            if review.changes:
+                plan = revised_plan(plan, shots, review)
+                result = build_day_draft(self.root, "sde", ai_plan=plan, effects=self.effects)
+        except (DirectorError, DraftError, OSError, sqlite3.Error, ValueError):
+            pass
+        self.done.emit(result, plan, None, review)
 
 
 CLIP_KINDS: tuple[DraftKind, ...] = ("express", "sde", "sde_ai")  # these render to a video
@@ -277,6 +293,8 @@ class AnalysisVM(QObject):
         self.draft_error: str | None = None  # DraftError code, or "error"
         self.draft_kind: DraftKind = "restaurant"
         self.ai_plan: AiPlan | None = None
+        self.ai_review: AiReview | None = None
+        self.ai_review_failed = False
         self.ai_busy = False
         self._ai_task: _AiTask | None = None
         self._skip_clocks = False  # as the last draft was built, so its video matches it
@@ -410,8 +428,10 @@ class AnalysisVM(QObject):
         QThreadPool.globalInstance().start(self._ai_task)
         self.changed.emit()
 
-    def _on_ai_done(self, result: object, plan: object, error: object) -> None:
+    def _on_ai_done(self, result: object, plan: object, error: object, review: object) -> None:
         self.ai_busy, self._ai_task = False, None
+        self.ai_review = review if isinstance(review, AiReview) else None
+        self.ai_review_failed = review == "review_error"
         self.draft = result if isinstance(result, DraftResult) else None
         self.ai_plan = plan if isinstance(plan, AiPlan) else None
         self.draft_error = error if isinstance(error, str) else None

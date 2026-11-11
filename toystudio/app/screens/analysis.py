@@ -542,15 +542,17 @@ class AnalysisScreen(QWidget):
         assert vm.draft is not None
         st = vm.draft.stats
         if vm.ai_plan is not None:
-            return (
+            cost = vm.ai_plan.cost_usd + (vm.ai_review.cost_usd if vm.ai_review else 0.0)
+            story = (
                 QCoreApplication.translate(
                     "AnalysisScreen", "Love Story: %1, склеек %2 · ИИ: «%3» · ≈ $%4"
                 )
                 .replace("%1", format_timecode(st.duration_us))
                 .replace("%2", str(st.cuts))
                 .replace("%3", vm.ai_plan.story)
-                .replace("%4", f"{vm.ai_plan.cost_usd:.2f}")
+                .replace("%4", f"{cost:.2f}")
             )
+            return "\n".join(t for t in (story, self._review_text()) if t)
         return (
             QCoreApplication.translate(
                 "AnalysisScreen", "Черновик: %1, склеек %2, убрано пауз и музыки %3"
@@ -558,6 +560,29 @@ class AnalysisScreen(QWidget):
             .replace("%1", format_timecode(st.duration_us))
             .replace("%2", str(st.cuts))
             .replace("%3", format_timecode(st.dropped_us))
+        )
+
+    def _review_text(self) -> str:
+        """What the AI's check of the cut swapped, the first three with their times."""
+        vm = self.vm
+        if vm.ai_review_failed:
+            return QCoreApplication.translate(
+                "AnalysisScreen", "Проверка кадров ИИ не удалась — клип собран без неё."
+            )
+        if vm.ai_review is None:
+            return ""
+        changes = vm.ai_review.changes
+        if not changes:
+            return QCoreApplication.translate(
+                "AnalysisScreen", "ИИ проверил кадры: заменять нечего."
+            )
+        shown = "; ".join(f"{format_timecode(c.at_us)} — {c.problem}" for c in changes[:3]) + (
+            "…" if len(changes) > 3 else ""
+        )
+        return (
+            QCoreApplication.translate("AnalysisScreen", "ИИ проверил кадры, заменено %1: %2")
+            .replace("%1", str(len(changes)))
+            .replace("%2", shown)
         )
 
     def _clip_notes(self) -> str:

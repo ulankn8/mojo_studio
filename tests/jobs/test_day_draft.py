@@ -300,3 +300,41 @@ def test_beats_start_where_the_music_is_heard():
     heard = _audible(beats, env)
     assert heard.beats_us[0] >= 2_500_000 - 150_000 and heard.beats_us[0] < 2_500_000 + 600_000
     assert _audible(beats, np.full(1000, 0.3)) == beats  # music from the start: unchanged
+
+
+@needs_ffmpeg
+def test_review_inputs_offer_other_moments_and_unused_takes(tmp_path):
+    from itertools import pairwise
+
+    from toystudio.core.ai_plan import AiPlan, AiShot
+    from toystudio.engine.analysis.single_pass import outputs_for
+    from toystudio.jobs.day_draft import review_inputs
+
+    root = _project(tmp_path, drone_hours_off=0)
+    s = ProjectStore.open(root)
+    try:
+        media = s.list_media()
+        for m in media[:10]:  # the plan's takes and a few unused ones
+            secs = m.info.duration_us / 1_000_000
+            make_clip(outputs_for(root / "cache", m.id).proxy, duration_s=secs, fps=50,
+                      size="320x180", audio=False)  # fmt: skip
+        long_take = media[0].id  # 120 s at the groom's house
+        convoy = [m.id for m in media if m.path.name.startswith("C00")][2:6]  # 10 s each
+    finally:
+        s.close()
+    with pytest.raises(DraftError):
+        review_inputs(root)  # no AI plan yet
+    plan = AiPlan("x", (AiShot(long_take, 10.0, 4, "intro", "дом"),
+                        *(AiShot(i, 30.0, 3, "development", "кортеж") for i in convoy)))  # fmt: skip
+    build_day_draft(root, "sde", ai_plan=plan)
+    shots = review_inputs(root)
+    assert [o.label for o in shots[0].options][:2] == ["A", "B"]
+    a, b = shots[0].options[:2]
+    assert a.clip_id == b.clip_id and abs(a.start_pct - b.start_pct) > 10  # another moment
+    assert all(o.frame.is_file() for s in shots for o in s.options[1:])  # B / C only if seen
+    assert len(shots) == len(plan.shots)  # every shot is there, also one without a frame
+    takes = [next((o.clip_id for o in s.options if o.label == "C"), None) for s in shots]
+    used = {long_take, *convoy}
+    assert all(takes) and not (set(takes) & used)  # every shot gets an unused take
+    assert all(a != b for a, b in pairwise(takes))  # not the one the shot before got
+    assert shots[1].at_us == shots[0].beats * 600_000  # times in the cut add up
