@@ -6,7 +6,7 @@ include_external_packages = True
 name = Layered architecture
 type = layers
 layers =
-    toystudio.app
+    toystudio.app | toystudio.doctor
     toystudio.jobs
     toystudio.storage | toystudio.cloud | toystudio.engine
     toystudio.core

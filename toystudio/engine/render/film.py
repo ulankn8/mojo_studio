@@ -64,9 +64,24 @@ def _run(args: list[str]) -> None:
 
 
 def _lut_path(path: Path) -> str:
-    """lut3d's file option, escaped for the filter graph (Windows drive colons too)."""
+    """lut3d's file option escaped twice: for the option parser (a drive's colon, a quote),
+    then quoted for the filter graph (commas, brackets), an apostrophe as '\\''."""
     text = path.as_posix().replace("\\", "/")
-    return "'" + text.replace(":", "\\:").replace("'", "\\'") + "'"
+    option = text.replace(":", "\\:").replace("'", "\\'")
+    return "'" + option.replace("'", "'\\''") + "'"
+
+
+def _concat_line(path: Path) -> str:
+    """A line of the concat demuxer's list; an apostrophe in the path as '\\''."""
+    return "file '" + path.as_posix().replace("'", "'\\''") + "'\n"
+
+
+def _free_name(out: Path) -> Path:
+    """The next free name beside `out`: "name (2).mp4", "name (3).mp4"..."""
+    n = 2
+    while (alt := out.with_name(f"{out.stem} ({n}){out.suffix}")).exists():
+        n += 1
+    return alt
 
 
 def _shot_filter(it: Item, lut: Path | None, st: RenderSettings, frames: int) -> str:
@@ -182,7 +197,7 @@ def render_film(
     run_files: list[tuple[Path, int]] = []
     for n, run in enumerate(runs):
         listing = work / f"run{n}.txt"
-        listing.write_text("".join(f"file '{p.as_posix()}'\n" for p in run), encoding="utf-8")
+        listing.write_text("".join(_concat_line(p) for p in run), encoding="utf-8")
         path = work / f"run{n}.mp4"
         _run(["-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(path)])
         run_files.append((path, sum(_frames_of(p) for p in run)))
@@ -229,7 +244,11 @@ def render_film(
           "-c:v", "libx264", "-preset", st.preset, "-crf", str(st.crf), "-r", str(st.fps),
           "-profile:v", "high", "-pix_fmt", "yuv420p", "-c:a", "aac",
           "-b:a", f"{st.audio_kbps}k", "-movflags", "+faststart", str(tmp)])  # fmt: skip
-    os.replace(tmp, out)
+    try:
+        os.replace(tmp, out)
+    except PermissionError:  # Windows: the last version is open in a player or Premiere
+        out = _free_name(out)
+        os.replace(tmp, out)
     for p in work.iterdir():
         p.unlink()
     work.rmdir()

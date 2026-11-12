@@ -151,3 +151,43 @@ def test_the_mix_is_normalised_for_the_web(tmp_path):
     lufs = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", log)[-1])
     peak = float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", log)[-1])
     assert abs(lufs - LOUDNESS_LUFS) <= 2 and peak <= -0.5
+
+
+@needs_ffmpeg
+def test_awkward_folder_names(tmp_path):
+    """A wedding folder with a comma, an apostrophe, brackets and Cyrillic (and a colon where
+    the file system allows it, like a Windows drive): the LUT and the pieces' list still work."""
+    import sys
+
+    name = "Свадьба, O'Brien [1]" + ("" if sys.platform == "win32" else " C:x")
+    folder = tmp_path / name
+    folder.mkdir()
+    src = {1: make_clip(folder / "a b.mp4", duration_s=4, fps=25, audio=False)}
+    lut = write_cube(folder / "look.cube")
+    items = [Item("V1", 1, 0, S, 0, S), Item("V1", 1, 2 * S, 3 * S, S, 2 * S)]
+    out = render_film(items, src, {1: 4 * S}, folder / "клип.mp4", luts={1: lut},
+                      transitions={S: "fade"}, settings=SMALL)  # fmt: skip
+    assert abs(probe_media(out).duration_us - 2 * S) <= 0.1 * S
+
+
+@needs_ffmpeg
+def test_a_locked_old_video_gets_a_new_name(tmp_path, monkeypatch):
+    """Windows will not replace a file open in a player: the new video goes beside it."""
+    import os
+
+    from toystudio.engine.render import film
+
+    src = _sources(tmp_path)
+    old = tmp_path / "SDE.mp4"
+    old.write_bytes(b"open in a player")
+    real = os.replace
+
+    def locked(a, b):
+        if os.fspath(b) == os.fspath(old):
+            raise PermissionError(13, "in use")
+        real(a, b)
+
+    monkeypatch.setattr(film.os, "replace", locked)
+    out = render_film([Item("V1", 1, 0, S, 0, S)], src, {1: 6 * S}, old, settings=SMALL)
+    assert out == tmp_path / "SDE (2).mp4" and probe_media(out).duration_us > 0
+    assert old.read_bytes() == b"open in a player"

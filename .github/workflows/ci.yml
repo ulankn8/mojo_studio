@@ -56,6 +56,8 @@ jobs:
         run: mypy toystudio/core
       - name: Import contracts
         run: lint-imports
+      - name: PC self-check (sample render in an awkward folder)
+        run: python -m toystudio.doctor
       - name: Pytest
         run: pytest -v --junitxml=pytest-junit.xml
       - name: Annotate failures

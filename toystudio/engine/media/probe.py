@@ -109,6 +109,7 @@ def audio_channels(path: Path) -> int:
     proc = subprocess.run(
         [find_tool("ffprobe"), "-v", "error", "-select_streams", "a:0",
          "-show_entries", "stream=channels", "-of", "csv=p=0", str(path)],
-        capture_output=True, text=True, check=False, creationflags=popen_flags(),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+        creationflags=popen_flags(),
     )  # fmt: skip
     return _int(proc.stdout.strip().splitlines()[0]) if proc.stdout.strip() else 0

@@ -46,6 +46,8 @@ def ffmpeg_major() -> int:
         [find_tool("ffmpeg"), "-version"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         creationflags=popen_flags(),
     ).stdout
@@ -59,6 +61,8 @@ def has_filter(name: str) -> bool:
         [find_tool("ffmpeg"), "-hide_banner", "-filters"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         creationflags=popen_flags(),
     ).stdout
